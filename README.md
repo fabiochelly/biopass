@@ -9,6 +9,8 @@
 Un serveur PHP sans base de données · une application web hors ligne · une extension Brave / Chrome ·
 une application de bureau native · une application Android avec saisie automatique.
 
+[![Licence MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+
 </div>
 
 ---
@@ -32,6 +34,7 @@ BioPass reste invisible pour les robots et les curieux.
 - [Administration et sauvegardes](#administration-et-sauvegardes)
 - [Développement](#développement)
 - [Limites connues](#limites-connues)
+- [Licence](#licence)
 
 ## Fonctionnalités
 
@@ -303,3 +306,8 @@ tools/test-all.sh                 # serveur, sauvegardes, Send, extension (Chrom
 - Hors connexion, les coffres sont consultables mais pas modifiables : le serveur reste la source
   de vérité.
 - Les passkeys ne sont pas gérées.
+
+## Licence
+
+[MIT](LICENSE) : utilisez, modifiez et redistribuez BioPass librement, y compris dans un projet
+commercial, en conservant la mention de copyright. Le logiciel est fourni tel quel, sans garantie.
