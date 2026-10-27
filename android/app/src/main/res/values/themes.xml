@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.BioPass.Base" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:colorAccent">@color/bp_accent</item>
+        <item name="android:colorPrimary">@color/bp_accent</item>
+        <item name="android:colorPrimaryDark">@color/bp_bg</item>
+        <item name="android:colorControlActivated">@color/bp_accent</item>
+        <item name="android:colorBackground">@color/bp_bg</item>
+        <item name="android:windowBackground">@color/bp_bg</item>
+        <item name="android:textColorPrimary">@color/bp_text</item>
+        <item name="android:textColorSecondary">@color/bp_text2</item>
+        <item name="android:textColorHint">@color/bp_text2</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:windowAnimationStyle">@style/BioPass.Transitions</item>
+    </style>
+    <style name="Theme.BioPass" parent="Theme.BioPass.Base" />
+
+    <style name="BioPass.Transitions" parent="android:Animation.Activity">
+        <item name="android:activityOpenEnterAnimation">@anim/bp_open_enter</item>
+        <item name="android:activityOpenExitAnimation">@anim/bp_open_exit</item>
+        <item name="android:activityCloseEnterAnimation">@anim/bp_close_enter</item>
+        <item name="android:activityCloseExitAnimation">@anim/bp_close_exit</item>
+    </style>
+</resources>

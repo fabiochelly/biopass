@@ -1,0 +1,13 @@
+# BioPass — déploiement automatique par tools/build-server.sh
+# Copiez ce fichier en deploy.conf (jamais versionné) puis adaptez-le.
+# Sans deploy.conf, build-server.sh prépare seulement server/ sans rien envoyer.
+
+# Hôte SSH (un nom de ~/.ssh/config ou utilisateur@serveur) et dossier de BioPass sur le serveur.
+# Le contenu de server/ y est envoyé par rsync, SANS web/ ni data/ : les coffres ne sont jamais
+# touchés et aucun fichier distant n'est supprimé.
+DEPLOY_HOST=user@example.com
+DEPLOY_PATH=/var/www/example/biopass
+
+# 1 : met aussi à jour l'app Android sur les téléphones branchés en USB (adb) où BioPass est déjà
+# installé, si l'APK construite est plus récente.
+DEPLOY_PHONE=0

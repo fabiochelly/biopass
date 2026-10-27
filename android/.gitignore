@@ -1,0 +1,10 @@
+# Clé de signature : NE PAS publier, mais SAUVEGARDER (voir README)
+/signing/
+/dist/
+/build/
+/app/build/
+/.gradle/
+/.kotlin/
+/local.properties
+*.iml
+/.idea/

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="104 80 304 352">
+  <!-- Bouclier seul (sans le carré de l'icône de l'app), recadré pour occuper toute la surface -->
+  <path d="M256 84l140 52v104c0 92-60 160-140 188-80-28-140-96-140-188V136z" fill="#3b82f6"/>
+  <circle cx="256" cy="226" r="50" fill="#fff"/>
+  <path d="M236 262h40l11 98h-62z" fill="#fff"/>
+</svg>

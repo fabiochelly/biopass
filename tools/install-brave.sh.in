@@ -1,0 +1,34 @@
+#!/bin/sh
+# BioPass — installe l'extension, et ses mises à jour automatiques, dans Brave, Chrome et Chromium
+# sous Linux, via une politique du navigateur (sudo requis).
+#   sh install-brave.sh            installer
+#   sh install-brave.sh --remove   désinstaller
+# Généré par tools/build-server.sh à partir de tools/install-brave.sh.in.
+set -e
+ID='@ID@'
+POLICY='{"ExtensionSettings":{"@ID@":{"installation_mode":"normal_installed","update_url":"@UPDATE_URL@"}}}'
+
+found=""
+for entry in "/etc/brave/policies/managed brave" "/etc/opt/chrome/policies/managed google-chrome" "/etc/chromium/policies/managed chromium"; do
+  dir=${entry% *}
+  bin=${entry#* }
+  if [ "$bin" != brave ] && ! command -v "$bin" >/dev/null 2>&1 && ! command -v "$bin-stable" >/dev/null 2>&1; then
+    continue
+  fi
+  found=1
+  if [ "${1:-}" = --remove ]; then
+    sudo rm -f "$dir/biopass.json"
+    echo "Retiré : $dir/biopass.json"
+  else
+    sudo mkdir -p "$dir"
+    printf '%s\n' "$POLICY" | sudo tee "$dir/biopass.json" >/dev/null
+    echo "Installé : $dir/biopass.json"
+  fi
+done
+
+[ -n "$found" ] || { echo "Aucun navigateur compatible trouvé (Brave, Chrome, Chromium)."; exit 1; }
+if [ "${1:-}" = --remove ]; then
+  echo "Redémarrez le navigateur : l'extension BioPass sera retirée."
+else
+  echo "Redémarrez le navigateur (fermez toutes ses fenêtres) : l'extension BioPass ($ID) s'installe et se met à jour toute seule."
+fi

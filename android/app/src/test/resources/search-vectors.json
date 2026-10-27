@@ -1,0 +1,458 @@
+{
+ "comment": "Généré par make-search-vectors.mjs depuis core.js. Pour chaque requête : noms des entrées trouvées, dans l'ordre exact.",
+ "fold": [
+  [
+   "Impôts",
+   "impots"
+  ],
+  [
+   "Œuvre Æther",
+   "oeuvre aether"
+  ],
+  [
+   "CRÉDIT",
+   "credit"
+  ]
+ ],
+ "items": [
+  {
+   "name": "GitHub",
+   "username": "fabio@example.net",
+   "uris": [
+    "https://github.com/login"
+   ],
+   "folder": "Dev",
+   "fav": true
+  },
+  {
+   "name": "Amazon",
+   "username": "fabio@example.net",
+   "uris": [
+    "https://www.amazon.fr"
+   ]
+  },
+  {
+   "name": "Banque Populaire",
+   "username": "12345678",
+   "uris": [
+    "https://www.banquepopulaire.fr"
+   ],
+   "folder": "Finances"
+  },
+  {
+   "name": "Boîte mail",
+   "username": "fabio@example.net",
+   "uris": [
+    "https://mail.proton.me"
+   ]
+  },
+  {
+   "name": "Impôts",
+   "username": "1234567890123",
+   "uris": [
+    "https://www.impots.gouv.fr"
+   ],
+   "folder": "Administratif"
+  },
+  {
+   "name": "Netflix",
+   "username": "famille@example.net",
+   "uris": [
+    "netflix.com"
+   ]
+  },
+  {
+   "name": "Wi-Fi maison",
+   "folder": "Maison"
+  },
+  {
+   "name": "Infomaniak SSH - example.net",
+   "username": "xyzw_martin",
+   "uris": [
+    "ssh://xyzw.vps.infomaniak.com"
+   ],
+   "folder": "Serveurs"
+  },
+  {
+   "name": "Free Mobile",
+   "username": "98765432",
+   "uris": [
+    "https://mobile.free.fr"
+   ]
+  },
+  {
+   "name": "Crédit Agricole",
+   "username": "client42",
+   "uris": [
+    "https://www.credit-agricole.fr"
+   ],
+   "folder": "Finances"
+  },
+  {
+   "name": "Œuvre caritative",
+   "username": "don@exemple.org"
+  },
+  {
+   "name": "Google",
+   "username": "fabio.martin@example.org",
+   "uris": [
+    "https://accounts.google.com"
+   ],
+   "fav": true
+  },
+  {
+   "name": "GitLab",
+   "username": "fabio",
+   "uris": [
+    "https://gitlab.com"
+   ],
+   "folder": "Dev"
+  },
+  {
+   "name": "Apple",
+   "username": "lisa",
+   "uris": [
+    "https://appleid.apple.com"
+   ]
+  },
+  {
+   "name": "Apple Store",
+   "username": "marc",
+   "uris": [
+    "https://www.apple.com/store"
+   ]
+  },
+  {
+   "name": "Apple ID",
+   "username": "lisamartin@icloud.example",
+   "uris": [
+    "https://appleid.apple.com"
+   ]
+  }
+ ],
+ "vectors": [
+  {
+   "query": "",
+   "results": [
+    "GitHub",
+    "Google",
+    "Amazon",
+    "Apple",
+    "Apple ID",
+    "Apple Store",
+    "Banque Populaire",
+    "Boîte mail",
+    "Crédit Agricole",
+    "Free Mobile",
+    "GitLab",
+    "Impôts",
+    "Infomaniak SSH - example.net",
+    "Netflix",
+    "Œuvre caritative",
+    "Wi-Fi maison"
+   ]
+  },
+  {
+   "query": "git",
+   "results": [
+    "GitHub",
+    "GitLab"
+   ]
+  },
+  {
+   "query": "GIT",
+   "results": [
+    "GitHub",
+    "GitLab"
+   ]
+  },
+  {
+   "query": "gthb",
+   "results": [
+    "GitHub"
+   ]
+  },
+  {
+   "query": "github",
+   "results": [
+    "GitHub"
+   ]
+  },
+  {
+   "query": "githbu",
+   "results": [
+    "GitHub"
+   ]
+  },
+  {
+   "query": "impots",
+   "results": [
+    "Impôts"
+   ]
+  },
+  {
+   "query": "IMPÔTS",
+   "results": [
+    "Impôts"
+   ]
+  },
+  {
+   "query": "credit",
+   "results": [
+    "Crédit Agricole"
+   ]
+  },
+  {
+   "query": "crédit agri",
+   "results": [
+    "Crédit Agricole"
+   ]
+  },
+  {
+   "query": "netflx",
+   "results": [
+    "Netflix"
+   ]
+  },
+  {
+   "query": "amzaon",
+   "results": [
+    "Amazon"
+   ]
+  },
+  {
+   "query": "amazn",
+   "results": [
+    "Amazon"
+   ]
+  },
+  {
+   "query": "bnq",
+   "results": [
+    "Banque Populaire"
+   ]
+  },
+  {
+   "query": "banque pop",
+   "results": [
+    "Banque Populaire"
+   ]
+  },
+  {
+   "query": "mail fabio",
+   "results": [
+    "Boîte mail"
+   ]
+  },
+  {
+   "query": "fabio mail",
+   "results": [
+    "Boîte mail"
+   ]
+  },
+  {
+   "query": "martin",
+   "results": [
+    "Google",
+    "Infomaniak SSH - example.net",
+    "Apple ID"
+   ]
+  },
+  {
+   "query": "proton",
+   "results": [
+    "Boîte mail"
+   ]
+  },
+  {
+   "query": "infomaniak",
+   "results": [
+    "Infomaniak SSH - example.net"
+   ]
+  },
+  {
+   "query": "infomanaik",
+   "results": [
+    "Infomaniak SSH - example.net"
+   ]
+  },
+  {
+   "query": "ssh",
+   "results": [
+    "Infomaniak SSH - example.net"
+   ]
+  },
+  {
+   "query": "oeuvre",
+   "results": [
+    "Œuvre caritative"
+   ]
+  },
+  {
+   "query": "œuvre",
+   "results": [
+    "Œuvre caritative"
+   ]
+  },
+  {
+   "query": "finances",
+   "results": [
+    "Banque Populaire",
+    "Crédit Agricole"
+   ]
+  },
+  {
+   "query": "dev",
+   "results": [
+    "GitHub",
+    "GitLab"
+   ]
+  },
+  {
+   "query": "g",
+   "results": [
+    "GitHub",
+    "Google",
+    "GitLab",
+    "Impôts",
+    "Crédit Agricole",
+    "Œuvre caritative"
+   ]
+  },
+  {
+   "query": "applis",
+   "results": [
+    "Apple",
+    "Apple ID"
+   ]
+  },
+  {
+   "query": "applisa",
+   "results": [
+    "Apple",
+    "Apple ID"
+   ]
+  },
+  {
+   "query": "lisapple",
+   "results": [
+    "Apple",
+    "Apple ID"
+   ]
+  },
+  {
+   "query": "lisapp",
+   "results": [
+    "Apple",
+    "Apple ID"
+   ]
+  },
+  {
+   "query": "lisicl",
+   "results": [
+    "Apple ID"
+   ]
+  },
+  {
+   "query": "icloudapple",
+   "results": [
+    "Apple ID"
+   ]
+  },
+  {
+   "query": "applelis",
+   "results": [
+    "Apple",
+    "Apple ID"
+   ]
+  },
+  {
+   "query": "idlisa",
+   "results": [
+    "Apple ID"
+   ]
+  },
+  {
+   "query": "martinapp",
+   "results": [
+    "Apple ID"
+   ]
+  },
+  {
+   "query": "lisaapple",
+   "results": [
+    "Apple",
+    "Apple ID"
+   ]
+  },
+  {
+   "query": "marcapple",
+   "results": [
+    "Apple Store"
+   ]
+  },
+  {
+   "query": "apple lisa",
+   "results": [
+    "Apple",
+    "Apple ID"
+   ]
+  },
+  {
+   "query": "applemarc",
+   "results": [
+    "Apple Store",
+    "Apple ID"
+   ]
+  },
+  {
+   "query": "lisa",
+   "results": [
+    "Apple",
+    "Apple ID"
+   ]
+  },
+  {
+   "query": "zz",
+   "results": []
+  },
+  {
+   "query": "xyzxyz",
+   "results": []
+  },
+  {
+   "query": "gml",
+   "results": []
+  },
+  {
+   "query": "free",
+   "results": [
+    "Free Mobile"
+   ]
+  },
+  {
+   "query": "mobile free",
+   "results": [
+    "Free Mobile"
+   ]
+  },
+  {
+   "query": "wifi",
+   "results": [
+    "Wi-Fi maison"
+   ]
+  },
+  {
+   "query": "wi-fi",
+   "results": [
+    "Wi-Fi maison"
+   ]
+  },
+  {
+   "query": "maison",
+   "results": [
+    "Wi-Fi maison"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=BioPass
+GenericName=Gestionnaire de mots de passe
+Comment=Rechercher et copier vos mots de passe BioPass
+Exec=biopass
+Icon=biopass
+Terminal=false
+Categories=Utility;Security;
+Keywords=mot de passe;password;coffre;identifiant;2fa;
+StartupWMClass=biopass

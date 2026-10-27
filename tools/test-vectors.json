@@ -1,0 +1,58 @@
+{
+  "comment": "Généré par make-vectors.mjs. wrapped/enc sont à DÉCHIFFRER (IV aléatoire), auth doit être identique.",
+  "password": "Crème brûlée 42!",
+  "salt": "AAECAwQFBgcICQoLDA0ODw==",
+  "iter": 600000,
+  "auth": "Najg8KojwscrbWpqIyvG/ZoabBDS+ATM7Nm8T6ZmJjw=",
+  "vaultKeyRawB64": "//79/Pv6+fj39vX08/Lx8O/u7ezr6uno5+bl5OPi4eA=",
+  "wrapped": "97tY39ZiuVeAJCSbK5xe0ENdlP1Vxr+iW32JhXgxtFEbR/Q/M6Ug683A7JPZ2KnG6pS4f4DvV/pe2ZBk",
+  "itemId": "0123456789abcdef0123456789abcdef",
+  "item": {
+    "type": "login",
+    "name": "Exemple",
+    "username": "fabio",
+    "password": "p@ss",
+    "uris": [
+      "https://example.com"
+    ],
+    "totp": "",
+    "notes": "é",
+    "created": 1,
+    "updated": 2
+  },
+  "itemEnc": "RNRwDbULJGl+edR1mJE9o/gKsiKCvYtoni7g+jqqQIQBLyTxWw/PSHqJXoB5fs/6jwv3X9iufnwI4oiJqqUKu8MbCDLkqZR8vqVqPEPiEew6HgfE9USIBfomaiw8J0QTRq7WRCqj/utgE6JZKqb8ImRIamKP7xnH9yH58gVji7Q3RNnN4Jp4wwywQ6S+oxMDY/xyLRtnrw8eHyvgNSF4i8Oqcql33MHBkRkmjFVDxBo=",
+  "totp": [
+    {
+      "secret": "JBSWY3DPEHPK3PXP",
+      "timeMs": 1700000000000,
+      "code": "324550"
+    },
+    {
+      "secret": "otpauth://totp/x?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA&algorithm=SHA256&digits=8",
+      "timeMs": 59000,
+      "code": "46119246"
+    }
+  ],
+  "baseDomain": [
+    [
+      "www.google.com",
+      "google.com"
+    ],
+    [
+      "accounts.google.co.uk",
+      "google.co.uk"
+    ],
+    [
+      "impots.gouv.fr",
+      "impots.gouv.fr"
+    ],
+    [
+      "192.168.1.1",
+      "192.168.1.1"
+    ],
+    [
+      "localhost",
+      "localhost"
+    ]
+  ]
+}

@@ -1,0 +1,8 @@
+<!doctype html><meta charset=utf-8><title>React-like</title>
+<form id=f><input type=email id=e><input type=password id=p><button type=button id=b>Login</button></form><pre id=log></pre>
+<script>
+// simule un « value tracker » à la React : on ne compte que les événements input
+const st={e:'',p:''};
+for(const id of ['e','p']) document.getElementById(id).addEventListener('input',ev=>{st[id]=ev.target.value});
+document.getElementById('b').onclick=()=>document.getElementById('log').textContent=JSON.stringify(st);
+</script>

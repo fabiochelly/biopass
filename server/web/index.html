@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f7fb" media="(prefers-color-scheme: light)">
+<title>BioPass</title>
+<meta name="bp-key" content="">
+<link rel="manifest" href="index.php?f=manifest.webmanifest" crossorigin="use-credentials">
+<link rel="icon" href="index.php?f=icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="index.php?f=icon-192.png">
+<link rel="stylesheet" href="index.php?f=assets/style.css">
+<script type="module" src="index.php?f=assets/app.js"></script>
+</head>
+<body>
+
+<main id="auth" class="auth" hidden>
+  <form id="auth-form" class="auth-card" novalidate>
+    <div class="logo" data-icon="logo"></div>
+    <h1>BioPass</h1>
+    <p id="auth-hello" class="subtitle">Vos mots de passe, chez vous.</p>
+    <label id="f-user" class="field-in">
+      <span>Identifiant</span>
+      <input name="user" autocomplete="username" autocapitalize="none" spellcheck="false">
+    </label>
+    <label class="field-in">
+      <span>Mot de passe maître</span>
+      <span class="with-btn">
+        <input name="password" type="password" autocomplete="current-password">
+        <button type="button" class="ghost" data-act="reveal" data-icon="eye" title="Afficher"></button>
+      </span>
+    </label>
+    <div id="reg-fields" hidden>
+      <label class="field-in">
+        <span>Confirmer le mot de passe maître</span>
+        <input name="password2" type="password" autocomplete="new-password">
+      </label>
+      <label class="field-in">
+        <span>Code d'inscription</span>
+        <input name="code" autocomplete="off">
+      </label>
+      <p class="hint">Le mot de passe maître ne peut pas être récupéré. Une phrase de plusieurs mots est idéale.</p>
+    </div>
+    <p id="auth-error" class="error" role="alert"></p>
+    <button id="auth-submit" class="btn primary block" type="submit"><span class="label">Déverrouiller</span><span class="spinner"></span></button>
+    <div class="auth-links">
+      <button type="button" class="link" id="auth-toggle">Créer un compte</button>
+      <button type="button" class="link" id="auth-switch" hidden>Changer d'utilisateur</button>
+    </div>
+  </form>
+</main>
+
+<div id="app" class="app" hidden>
+  <header class="bar">
+    <div class="brand"><span class="logo-sm" data-icon="logo"></span><span>BioPass</span></div>
+    <label class="search">
+      <span data-icon="search"></span>
+      <input id="q" type="search" placeholder="Rechercher" autocomplete="off" spellcheck="false" enterkeyhint="search">
+      <kbd>/</kbd>
+    </label>
+    <span id="status" class="chip"></span>
+    <button id="btn-menu" class="btn ghost round" data-icon="menu" title="Menu"></button>
+    <button id="btn-new" class="btn primary fab" data-icon="plus" title="Nouvelle entrée"><span class="label">Nouveau</span></button>
+  </header>
+  <div class="layout">
+    <nav class="list-wrap">
+      <div id="list-head" class="list-head"></div>
+      <ul id="list" class="list"></ul>
+    </nav>
+    <section id="detail" class="detail" hidden></section>
+  </div>
+</div>
+
+<dialog id="dlg-edit" class="sheet">
+  <form id="edit-form" method="dialog" novalidate>
+    <header class="sheet-head">
+      <h2 id="edit-title">Nouvelle entrée</h2>
+      <button type="button" class="btn ghost round" data-act="cancel" data-icon="x" title="Fermer"></button>
+    </header>
+    <div class="sheet-body">
+      <label class="field-in"><span>Nom</span><input name="name" required></label>
+      <label class="field-in"><span>Identifiant</span><input name="username" autocomplete="off" autocapitalize="none" spellcheck="false"></label>
+      <label class="field-in"><span>Mot de passe</span>
+        <span class="with-btn">
+          <input name="password" type="password" autocomplete="new-password" spellcheck="false" class="mono">
+          <button type="button" class="ghost" data-act="reveal" data-icon="eye" title="Afficher"></button>
+          <button type="button" class="ghost" data-act="gen" data-icon="dice" title="Générer"></button>
+        </span>
+      </label>
+      <div class="gen">
+        <div class="strength"><i id="strength-bar"></i></div>
+        <label class="range"><span>Longueur</span><input name="g-len" type="range" min="8" max="64" value="20"><output id="g-len-out">20</output></label>
+        <div class="toggles">
+          <label class="pill"><input name="g-upper" type="checkbox" checked><span>A-Z</span></label>
+          <label class="pill"><input name="g-digits" type="checkbox" checked><span>0-9</span></label>
+          <label class="pill"><input name="g-symbols" type="checkbox" checked><span>!@#</span></label>
+        </div>
+      </div>
+      <label class="field-in"><span>Sites (un par ligne)</span><textarea name="uris" rows="2" spellcheck="false" placeholder="https://exemple.fr"></textarea></label>
+      <label class="field-in"><span>Clé 2FA (TOTP)</span><input name="totp" autocomplete="off" spellcheck="false" placeholder="Secret base32 ou otpauth://…"></label>
+      <label class="field-in"><span>Dossier</span><input name="folder" list="folders" autocomplete="off"></label>
+      <datalist id="folders"></datalist>
+      <label class="field-in"><span>Notes</span><textarea name="notes" rows="3"></textarea></label>
+      <div class="group-title">Champs personnalisés</div>
+      <div id="edit-fields"></div>
+      <button type="button" class="btn ghost small" data-act="add-field" data-icon="plus">Ajouter un champ</button>
+      <label class="switch"><input name="fav" type="checkbox"><i></i><span>Favori</span></label>
+      <p id="edit-error" class="error" role="alert"></p>
+    </div>
+    <footer class="sheet-foot">
+      <button type="button" class="btn" data-act="cancel">Annuler</button>
+      <button type="submit" class="btn primary">Enregistrer</button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog id="dlg-menu" class="sheet narrow">
+  <header class="sheet-head">
+    <div class="me"><div id="menu-avatar" class="avatar"></div><div><b id="menu-user"></b><small id="menu-count"></small></div></div>
+    <button type="button" class="btn ghost round" data-act="close" data-icon="x" title="Fermer"></button>
+  </header>
+  <div class="menu">
+    <button data-act="apps" data-icon="phone">Applications et extension</button>
+    <button data-act="sync" data-icon="sync">Synchroniser</button>
+    <button data-act="icons" data-icon="globe">Récupérer les icônes des sites</button>
+    <button data-act="noicons" data-icon="search">Entrées sans icône</button>
+    <button data-act="backups" data-icon="history">Sauvegardes</button>
+    <button data-act="sends" data-icon="send">Partages envoyés</button>
+    <button data-act="import" data-icon="upload">Importer depuis Bitwarden</button>
+    <button data-act="export" data-icon="download">Exporter en clair</button>
+    <button data-act="password" data-icon="key">Changer le mot de passe maître</button>
+    <button data-act="revoke" data-icon="devices">Déconnecter les autres appareils</button>
+    <label class="menu-row"><span data-icon="clock"></span>Verrouillage auto
+      <select id="lock-delay">
+        <option value="1">1 min</option>
+        <option value="5">5 min</option>
+        <option value="15">15 min</option>
+        <option value="60">1 h</option>
+        <option value="240">4 h</option>
+        <option value="4320">72 h</option>
+      </select>
+    </label>
+    <hr>
+    <button data-act="lock" data-icon="lock">Verrouiller</button>
+    <button data-act="forget" data-icon="logout" class="danger">Oublier cet appareil</button>
+  </div>
+  <input id="import-file" type="file" accept=".json,application/json" hidden>
+</dialog>
+
+<dialog id="dlg-pass" class="sheet narrow">
+  <form id="pass-form" method="dialog" novalidate>
+    <header class="sheet-head">
+      <h2>Mot de passe maître</h2>
+      <button type="button" class="btn ghost round" data-act="cancel" data-icon="x" title="Fermer"></button>
+    </header>
+    <div class="sheet-body">
+      <label class="field-in"><span>Mot de passe actuel</span><input name="old" type="password" autocomplete="current-password"></label>
+      <label class="field-in"><span>Nouveau mot de passe</span><input name="new" type="password" autocomplete="new-password"></label>
+      <label class="field-in"><span>Confirmer</span><input name="new2" type="password" autocomplete="new-password"></label>
+      <p class="hint">Les autres appareils devront se reconnecter avec le nouveau mot de passe.</p>
+      <p id="pass-error" class="error" role="alert"></p>
+    </div>
+    <footer class="sheet-foot">
+      <button type="button" class="btn" data-act="cancel">Annuler</button>
+      <button type="submit" class="btn primary">Changer</button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog id="dlg-apps" class="sheet wide">
+  <header class="sheet-head">
+    <h2>Applications</h2>
+    <button type="button" class="btn ghost round" data-act="close" data-icon="x" title="Fermer"></button>
+  </header>
+  <div class="sheet-body apps">
+    <div class="group-title">Adresse du serveur à saisir dans les apps</div>
+    <div class="copy-box"><code id="apps-server"></code><button type="button" class="btn ghost round" data-act="copy-server" data-icon="copy" title="Copier"></button></div>
+    <p class="hint">Elle contient la clé d'accès : ne la partagez qu'avec la famille.</p>
+    <div id="apps-list"></div>
+  </div>
+</dialog>
+
+<dialog id="dlg-backups" class="sheet xwide">
+  <header class="sheet-head">
+    <h2>Sauvegardes</h2>
+    <button type="button" class="btn ghost round" data-act="close" data-icon="x" title="Fermer"></button>
+  </header>
+  <div class="sheet-body backups">
+    <label class="field-in"><span>Comparer l'état actuel à la sauvegarde du</span><select id="bk-date"></select></label>
+    <p class="hint">Le serveur garde une copie par jour (avant la première modification), pendant 30 jours.</p>
+    <div id="bk-summary" class="bk-summary"></div>
+    <div id="bk-list"></div>
+  </div>
+</dialog>
+
+<dialog id="dlg-send" class="sheet wide">
+  <form id="send-form" method="dialog" novalidate>
+    <header class="sheet-head">
+      <h2>Partager</h2>
+      <button type="button" class="btn ghost round" data-act="cancel" data-icon="x" title="Fermer"></button>
+    </header>
+    <div class="sheet-body">
+      <p class="hint">Chiffré de bout en bout : la clé reste dans le lien (après « # »), le serveur ne peut rien lire.</p>
+      <div class="group-title">Entrées partagées</div>
+      <div id="send-items" class="send-items"></div>
+      <div class="send-add">
+        <input id="send-add" placeholder="Ajouter une autre entrée…" autocomplete="off" spellcheck="false">
+        <div id="send-add-results" class="send-add-results" hidden></div>
+      </div>
+      <div class="group-title">Informations incluses</div>
+      <div class="toggles wrap">
+        <label class="pill"><input name="f-username" type="checkbox" checked><span>Identifiant</span></label>
+        <label class="pill"><input name="f-password" type="checkbox" checked><span>Mot de passe</span></label>
+        <label class="pill"><input name="f-uris" type="checkbox" checked><span>Sites</span></label>
+        <label class="pill"><input name="f-totp" type="checkbox"><span>Code 2FA</span></label>
+        <label class="pill"><input name="f-notes" type="checkbox"><span>Notes</span></label>
+        <label class="pill"><input name="f-fields" type="checkbox"><span>Champs personnalisés</span></label>
+      </div>
+      <label class="field-in"><span>Message (facultatif)</span><textarea name="message" rows="2" placeholder="Voici les accès dont tu as besoin…"></textarea></label>
+      <div class="send-opts">
+        <label class="field-in"><span>Expire dans</span>
+          <select name="ttl"><option value="3600">1 heure</option><option value="86400">1 jour</option><option value="604800" selected>7 jours</option><option value="2592000">30 jours</option></select>
+        </label>
+        <label class="field-in"><span>Consultations</span>
+          <select name="views"><option value="1">1 seule</option><option value="3" selected>3</option><option value="10">10</option><option value="0">Illimitées</option></select>
+        </label>
+      </div>
+      <label class="switch"><input name="pin" type="checkbox"><i></i><span>Protéger par un code à transmettre séparément</span></label>
+      <p class="error" role="alert"></p>
+    </div>
+    <footer class="sheet-foot">
+      <button type="button" class="btn" data-act="cancel">Annuler</button>
+      <button type="submit" class="btn primary" data-icon="link">Créer le lien</button>
+    </footer>
+  </form>
+  <div id="send-done" class="send-done" hidden>
+    <header class="sheet-head">
+      <h2>Lien prêt</h2>
+      <button type="button" class="btn ghost round" data-act="close" data-icon="x" title="Fermer"></button>
+    </header>
+    <div class="sheet-body" id="send-done-body"></div>
+  </div>
+</dialog>
+
+<dialog id="dlg-noicons" class="sheet wide">
+  <header class="sheet-head">
+    <h2>Entrées sans icône de site</h2>
+    <button type="button" class="btn ghost round" data-act="close" data-icon="x" title="Fermer"></button>
+  </header>
+  <div class="sheet-body" id="noicons-list"></div>
+</dialog>
+
+<dialog id="dlg-sends" class="sheet wide">
+  <header class="sheet-head">
+    <h2>Partages envoyés</h2>
+    <button type="button" class="btn ghost round" data-act="close" data-icon="x" title="Fermer"></button>
+  </header>
+  <div class="sheet-body" id="sends-list"></div>
+</dialog>
+
+<div id="toast" class="toast" role="status"></div>
+</body>
+</html>

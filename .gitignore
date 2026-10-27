@@ -1,0 +1,27 @@
+# secrets et données (ne jamais publier)
+server/config.php
+server/data/
+deploy.conf
+android/signing/
+extension-signing/
+*.jks
+*.pem
+
+# générés par les builds
+dist/
+desktop/target/
+android/build/
+android/app/build/
+android/.gradle/
+android/.kotlin/
+android/dist/
+android/local.properties
+server/web.php
+server/downloads.php
+server/web/downloads/
+node_modules/
+
+# éditeurs
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>BioPass</title>
+<link rel="stylesheet" href="popup.css">
+<script type="module" src="popup.js"></script>
+</head>
+<body>
+
+<!-- Configuration initiale -->
+<section id="v-setup" class="auth" hidden>
+  <div class="logo" data-icon="logo"></div>
+  <h1>BioPass</h1>
+  <p class="subtitle">Connectez votre serveur</p>
+  <p class="hint center">Copiez l'adresse depuis le site : menu ☰ → Applications.</p>
+  <form id="setup-form" novalidate>
+    <label class="field"><span>Adresse du serveur</span><input name="server" placeholder="https://example.com/biopass/?k=…" spellcheck="false" autocomplete="url"></label>
+    <label class="field"><span>Identifiant</span><input name="user" autocomplete="username" autocapitalize="none" spellcheck="false"></label>
+    <label class="field"><span>Mot de passe maître</span><input name="password" type="password" autocomplete="current-password"></label>
+    <p class="error" role="alert"></p>
+    <button class="btn primary block" type="submit"><span class="label">Se connecter</span><span class="spinner"></span></button>
+  </form>
+</section>
+
+<!-- Verrouillé -->
+<section id="v-locked" class="auth" hidden>
+  <div class="logo" data-icon="logo"></div>
+  <h1>BioPass</h1>
+  <p class="subtitle" id="locked-user"></p>
+  <form id="unlock-form" novalidate>
+    <label class="field"><span>Mot de passe maître</span><input name="password" type="password" autocomplete="current-password" autofocus></label>
+    <p class="error" role="alert"></p>
+    <button class="btn primary block" type="submit"><span class="label">Déverrouiller</span><span class="spinner"></span></button>
+  </form>
+  <button class="link" id="btn-switch">Changer de compte</button>
+</section>
+
+<!-- Principal -->
+<section id="v-main" class="main" hidden>
+  <header class="top">
+    <label class="search">
+      <span data-icon="search"></span>
+      <input id="q" type="search" placeholder="Rechercher" autocomplete="off" spellcheck="false">
+    </label>
+    <button class="ib" id="btn-add" data-icon="plus" title="Ajouter pour ce site"></button>
+    <button class="ib" id="btn-gen" data-icon="dice" title="Générateur"></button>
+  </header>
+  <div id="mismatch" class="bar-warn" hidden>
+    <span>Ce site ne correspond pas à l'entrée.</span>
+    <button class="btn small" id="btn-force">Remplir quand même</button>
+  </div>
+  <div class="scroll" id="results"></div>
+  <footer class="bottom">
+    <span id="status" class="chip"></span>
+    <span class="spacer"></span>
+    <button class="ib" id="btn-popout" data-icon="popout" title="Ouvrir dans une fenêtre"></button>
+    <button class="ib" id="btn-web" data-icon="external" title="Ouvrir le coffre web"></button>
+    <button class="ib" id="btn-sync" data-icon="sync" title="Synchroniser"></button>
+    <button class="ib" id="btn-settings" data-icon="sliders" title="Réglages"></button>
+    <button class="ib" id="btn-lock" data-icon="lock" title="Verrouiller"></button>
+  </footer>
+</section>
+
+<!-- Panneau : générateur -->
+<section id="p-gen" class="panel" hidden>
+  <header class="panel-head"><button class="ib" data-close data-icon="back" title="Retour"></button><h2>Générateur</h2></header>
+  <div class="panel-body">
+    <div class="gen-out"><code id="gen-pw"></code></div>
+    <div class="strength"><i id="gen-strength"></i></div>
+    <label class="range"><span>Longueur</span><input id="gen-len" type="range" min="8" max="64" value="20"><output id="gen-len-out">20</output></label>
+    <div class="toggles">
+      <label class="pill"><input id="gen-upper" type="checkbox" checked><span>A-Z</span></label>
+      <label class="pill"><input id="gen-digits" type="checkbox" checked><span>0-9</span></label>
+      <label class="pill"><input id="gen-symbols" type="checkbox" checked><span>!@#</span></label>
+    </div>
+    <div class="row-btns">
+      <button class="btn" id="gen-again" data-icon="sync">Régénérer</button>
+      <button class="btn primary" id="gen-copy" data-icon="copy">Copier</button>
+    </div>
+  </div>
+</section>
+
+<!-- Panneau : création / modification d'une entrée -->
+<section id="p-add" class="panel" hidden>
+  <header class="panel-head">
+    <button class="ib" data-close data-icon="back" title="Retour"></button><h2 id="edit-title">Nouvel identifiant</h2>
+    <span class="spacer"></span>
+    <button class="ib danger" id="edit-delete" data-icon="trash" title="Supprimer" hidden></button>
+  </header>
+  <form id="add-form" class="panel-body" novalidate>
+    <label class="field"><span>Nom</span><input name="name"></label>
+    <label class="field"><span>Identifiant</span><input name="username" autocapitalize="none" spellcheck="false"></label>
+    <label class="field"><span>Mot de passe</span>
+      <span class="with-btn">
+        <input name="password" type="text" spellcheck="false" class="mono" autocomplete="off">
+        <button type="button" class="ghost" id="add-reveal" data-icon="eye" title="Afficher"></button>
+        <button type="button" class="ghost" id="add-gen" data-icon="dice" title="Générer"></button>
+      </span>
+    </label>
+    <label class="field"><span>Sites (un par ligne)</span><textarea name="uris" rows="2" spellcheck="false"></textarea></label>
+    <label class="field"><span>Clé 2FA (TOTP)</span><input name="totp" spellcheck="false" autocomplete="off" placeholder="secret base32 ou otpauth://…"></label>
+    <label class="field"><span>Notes</span><textarea name="notes" rows="3"></textarea></label>
+    <p class="error" role="alert"></p>
+    <button class="btn primary block" type="submit">Enregistrer</button>
+  </form>
+</section>
+
+<!-- Panneau : réglages -->
+<section id="p-settings" class="panel" hidden>
+  <header class="panel-head"><button class="ib" data-close data-icon="back" title="Retour"></button><h2>Réglages</h2></header>
+  <div class="panel-body">
+    <div class="me"><div id="me-avatar" class="avatar"></div><div><b id="me-user"></b><small id="me-server"></small></div></div>
+    <label class="opt"><span>Verrouillage auto</span>
+      <select id="opt-lock">
+        <option value="-1">Jamais (rester connecté)</option>
+        <option value="5">5 min</option>
+        <option value="15">15 min</option>
+        <option value="30">30 min</option>
+        <option value="60">1 h</option>
+        <option value="240">4 h</option>
+        <option value="4320">72 h</option>
+        <option value="0">À la fermeture du navigateur</option>
+      </select>
+    </label>
+    <p class="hint" id="lock-hint">« Jamais » : le coffre reste ouvert même après redémarrage du navigateur (la clé est conservée dans le profil du navigateur). Le cadenas verrouille quand vous voulez.</p>
+    <label class="opt switch"><span>Liste des comptes sous un champ quand il prend le focus</span><input id="opt-inline" type="checkbox"><i></i></label>
+    <label class="opt switch"><span>Proposer d'enregistrer les mots de passe</span><input id="opt-save" type="checkbox"><i></i></label>
+    <label class="opt switch"><span>Ouvrir BioPass dans une fenêtre</span><input id="opt-window" type="checkbox"><i></i></label>
+    <p class="hint">Plutôt que dans la bulle de la barre d'outils : Brave n'y transmet pas les touches Compose ni les macros clavier (keyd…), une fenêtre si.</p>
+    <p class="hint">Raccourcis : <kbd>Ctrl</kbd>+<kbd>Espace</kbd> remplir (encore : compte suivant), <kbd>Ctrl</kbd>+<kbd>Maj</kbd>+<kbd>G</kbd> copier un mot de passe généré.</p>
+    <button class="btn block" id="btn-shortcuts" data-icon="sliders">Modifier les raccourcis clavier</button>
+    <p></p>
+    <button class="btn block" id="btn-update" data-icon="sync">Rechercher une mise à jour</button>
+    <p class="version-note" id="ext-version"></p>
+    <p></p>
+    <button class="btn danger block" id="btn-forget" data-icon="logout">Se déconnecter de ce navigateur</button>
+  </div>
+</section>
+
+<div id="toast" class="toast"></div>
+</body>
+</html>

@@ -1,0 +1,11 @@
+// Document hors écran : seul contexte d'une extension MV3 où l'on peut écrire dans le presse-papiers
+// sans page au premier plan (raccourci « mot de passe généré », effacement après 30 s).
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (msg.target !== 'offscreen' || msg.type !== 'copy') return;
+  const onCopy = (e) => {
+    e.clipboardData.setData('text/plain', msg.text); // fonctionne aussi pour une chaîne vide (effacement)
+    e.preventDefault();
+  };
+  document.addEventListener('copy', onCopy, { once: true });
+  reply(document.execCommand('copy'));
+});

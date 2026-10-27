@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bp_bg">#0E1116</color>
+    <color name="bp_surface">#181C23</color>
+    <color name="bp_surface2">#222731</color>
+    <color name="bp_outline">#2C3240</color>
+    <color name="bp_text">#F1F3F7</color>
+    <color name="bp_text2">#9AA3B2</color>
+    <color name="bp_accent">#60A5FA</color>
+    <color name="bp_on_accent">#0B1220</color>
+    <color name="bp_accent_soft">#1E3A5F</color>
+    <color name="bp_on_accent_soft">#BFDBFE</color>
+    <color name="bp_danger">#F87171</color>
+    <color name="bp_warn_bg">#3B2F0B</color>
+    <color name="bp_warn_text">#FCD34D</color>
+</resources>

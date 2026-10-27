@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- compatibility-package : navigateurs SANS prise en charge native de l'API Autofill.
+     Ne jamais y mettre Chrome ni Brave : depuis Chrome 135, ils parlent directement au service
+     (réglage « Saisie automatique via un autre service ») et le mode de compatibilité, s'il est
+     déclaré, s'active en parallèle et casse tout (le champ ciblé est introuvable, rien ne s'affiche). -->
+<autofill-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:settingsActivity="app.biopass.SettingsActivity"
+    android:supportsInlineSuggestions="true">
+    <compatibility-package android:name="org.mozilla.firefox" android:maxLongVersionCode="10000000000" />
+    <compatibility-package android:name="org.mozilla.firefox_beta" android:maxLongVersionCode="10000000000" />
+    <compatibility-package android:name="org.mozilla.focus" android:maxLongVersionCode="10000000000" />
+    <compatibility-package android:name="org.mozilla.fenix" android:maxLongVersionCode="10000000000" />
+    <compatibility-package android:name="com.sec.android.app.sbrowser" android:maxLongVersionCode="10000000000" />
+    <compatibility-package android:name="com.sec.android.app.sbrowser.beta" android:maxLongVersionCode="10000000000" />
+    <compatibility-package android:name="com.microsoft.emmx" android:maxLongVersionCode="10000000000" />
+    <compatibility-package android:name="com.opera.browser" android:maxLongVersionCode="10000000000" />
+    <compatibility-package android:name="com.opera.mini.native" android:maxLongVersionCode="10000000000" />
+    <compatibility-package android:name="com.vivaldi.browser" android:maxLongVersionCode="10000000000" />
+    <compatibility-package android:name="com.duckduckgo.mobile.android" android:maxLongVersionCode="10000000000" />
+    <compatibility-package android:name="com.kiwibrowser.browser" android:maxLongVersionCode="10000000000" />
+    <compatibility-package android:name="com.ecosia.android" android:maxLongVersionCode="10000000000" />
+    <compatibility-package android:name="org.bromite.bromite" android:maxLongVersionCode="10000000000" />
+    <compatibility-package android:name="com.yandex.browser" android:maxLongVersionCode="10000000000" />
+    <compatibility-package android:name="com.mi.globalbrowser" android:maxLongVersionCode="10000000000" />
+    <compatibility-package android:name="com.huawei.browser" android:maxLongVersionCode="10000000000" />
+    <compatibility-package android:name="mark.via.gp" android:maxLongVersionCode="10000000000" />
+    <compatibility-package android:name="org.torproject.torbrowser" android:maxLongVersionCode="10000000000" />
+    <compatibility-package android:name="us.spotco.fennec_dos" android:maxLongVersionCode="10000000000" />
+    <compatibility-package android:name="io.github.forkmaintainers.iceraven" android:maxLongVersionCode="10000000000" />
+    <compatibility-package android:name="com.cookiegames.smartcookie" android:maxLongVersionCode="10000000000" />
+</autofill-service>

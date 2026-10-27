@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Repli (API 28–30) : palette bleue. API 31+ : couleurs dynamiques Material You (values-v31). -->
+    <color name="bp_bg">#F5F7FB</color>
+    <color name="bp_surface">#FFFFFF</color>
+    <color name="bp_surface2">#ECEFF5</color>
+    <color name="bp_outline">#E2E6EE</color>
+    <color name="bp_text">#111827</color>
+    <color name="bp_text2">#6B7280</color>
+    <color name="bp_accent">#3B82F6</color>
+    <color name="bp_on_accent">#FFFFFF</color>
+    <color name="bp_accent_soft">#DCE8FD</color>
+    <color name="bp_on_accent_soft">#1D4ED8</color>
+    <color name="bp_danger">#DC2626</color>
+    <color name="bp_warn_bg">#FEF3C7</color>
+    <color name="bp_warn_text">#92400E</color>
+    <color name="bp_logo_dark">#1D4ED8</color>
+    <color name="bp_logo">#3B82F6</color>
+</resources>
