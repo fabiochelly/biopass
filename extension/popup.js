@@ -1,5 +1,5 @@
 // BioPass — popup de l'extension.
-import { search, hostOf, matchesUrl, generatePassword, normServer, parseServer, webUrl, withHistory, iconHost, entryKind } from './lib/core.js';
+import { search, prepareSearch, hostOf, matchesUrl, generatePassword, normServer, parseServer, webUrl, withHistory, iconHost, entryKind } from './lib/core.js';
 import { icon, hydrateIcons, avatarColor, initial, KIND_COLORS, KIND_ICONS } from './lib/icons.js';
 
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -42,6 +42,16 @@ function toast(msg, ok = true) {
   toast.t = setTimeout(() => t.classList.remove('show'), 1600);
 }
 
+// Liste allégée (sans mots de passe ni icônes) : le mot de passe est demandé au moment de le copier.
+// Réponse « popup » du service worker : liste allégée, avec les icônes des premières lignes déjà posées.
+const listOf = (r) => {
+  for (const it of r.list || []) if (it._id in (r.icons || {})) it.icon = r.icons[it._id];
+  return r.list || [];
+};
+const fetchList = async () => listOf(await bg('popup', { first: FIRST }));
+const copySecret = async (it, btn, field = 'password') =>
+  copy(await bg('secret', { id: it._id, field }), field === 'password' ? 'Mot de passe' : 'Identifiant', btn);
+
 async function copy(text, label, btn) {
   if (!text) return;
   await navigator.clipboard.writeText(text);
@@ -57,7 +67,7 @@ async function copy(text, label, btn) {
 
 function avatar(name, siteIcon, it = null) {
   if (siteIcon) return h('div', { class: 'avatar site' + (it?.iconTone ? ' ' + it.iconTone : '') }, h('img', { src: siteIcon, alt: '', decoding: 'async' }));
-  const kind = it && entryKind(it);
+  const kind = it && ('kind' in it ? it.kind : entryKind(it)); // calculé par le service worker
   if (kind) {
     const k = h('div', { class: 'avatar kind' }, icon(KIND_ICONS[kind]));
     k.style.background = KIND_COLORS[kind];
@@ -81,8 +91,9 @@ function busy(form, on) {
 
 // ------------------------------------------------------------------ routage
 
-async function route() {
-  st = await bg('status');
+async function route(init = null) {
+  init ??= await bg('popup', { first: FIRST });
+  st = init.status;
   if (!st.configured) {
     show('setup');
     $('#setup-form').server.focus();
@@ -91,7 +102,7 @@ async function route() {
     $('#locked-user').textContent = `Coffre de ${st.user}`;
     $('#unlock-form').password.focus();
   } else {
-    await loadMain();
+    loadMain(listOf(init));
   }
 }
 
@@ -142,17 +153,22 @@ $('#btn-switch').onclick = async () => {
 
 // ------------------------------------------------------------------ liste
 
-async function loadMain() {
+function loadMain(list) {
   show('main');
-  items = await bg('list');
+  items = list;
   renderStatus();
-  $('#results').classList.add('intro'); // animation d'apparition seulement à l'ouverture
-  setTimeout(() => $('#results').classList.remove('intro'), 400);
   render();
+  // recherche préparée par petits paquets quand le navigateur est libre : première frappe immédiate
+  let i = 0;
+  const prep = (deadline) => {
+    while (i < list.length && items === list && (!deadline || deadline.timeRemaining() > 1)) prepareSearch(list[i++]);
+    if (i < list.length && items === list) idle(prep);
+  };
+  idle(prep);
   $('#q').focus();
   bg('sync').then(async (changed) => {
     if (changed) {
-      items = await bg('list');
+      items = await fetchList();
       render();
     }
     st = await bg('status');
@@ -168,7 +184,9 @@ function renderStatus() {
 }
 
 // Rendu rapide : lignes mémorisées (une par entrée et par section) et réutilisées d'une frappe à
-// l'autre ; 30 lignes tout de suite, le reste quand le navigateur est libre (annulé à la frappe suivante).
+// l'autre ; les lignes visibles tout de suite, le reste quand le navigateur est libre (annulé à la
+// frappe suivante).
+const FIRST = 12; // lignes visibles dans le popup (580 px)
 let renderToken = 0;
 const rowCaches = { site: new WeakMap(), all: new WeakMap() };
 const idle = (f) => (window.requestIdleCallback ? requestIdleCallback(f, { timeout: 200 }) : setTimeout(f, 16));
@@ -215,7 +233,7 @@ function render() {
   const toEl = (n) => (n instanceof Node ? n : placeRow(n.it, n.idx, n.kind));
   const token = ++renderToken;
   sel = Math.min(sel, Math.max(0, flat.length - 1));
-  let next = 30;
+  let next = FIRST;
   const more = async (deadline) => {
     if (token !== renderToken || next >= nodes.length) return;
     const end = Math.min(nodes.length, next + 60);
@@ -228,11 +246,12 @@ function render() {
   };
   const paint = () => {
     if (token !== renderToken) return;
-    box.replaceChildren(...nodes.slice(0, 30).map(toEl));
+    box.replaceChildren(...nodes.slice(0, FIRST).map(toEl));
+    performance.mark('bp:rows');
     highlight();
     idle(more);
   };
-  const first = rowsOf(nodes.slice(0, 30));
+  const first = rowsOf(nodes.slice(0, FIRST));
   if (first.some((it) => it.iconLazy && it.icon === undefined)) loadIcons(first).then(paint);
   else paint();
 }
@@ -241,16 +260,18 @@ function row(it) {
   const name = it.name || hostOf(it.uris?.[0]) || '(sans nom)';
   const stop = (fn) => (e) => { e.stopPropagation(); fn(e.currentTarget); };
   const acts = h('div', { class: 'acts' },
-    isWeb() && (it.username || it.password) && h('button', { class: 'ib fill', title: 'Remplir', onclick: stop(() => fill(it)) }, icon('fill')),
+    isWeb() && (it.username || it.hasPw) && h('button', { class: 'ib fill', title: 'Remplir', onclick: stop(() => fill(it)) }, icon('fill')),
     it.username && h('button', { class: 'ib', title: 'Copier l\'identifiant', onclick: stop((b) => copy(it.username, 'Identifiant', b)) }, icon('user')),
-    it.password && h('button', { class: 'ib', title: 'Copier le mot de passe', onclick: stop((b) => copy(it.password, 'Mot de passe', b)) }, icon('key')),
+    it.hasPw && h('button', { class: 'ib', title: 'Copier le mot de passe', onclick: stop((b) => copySecret(it, b)) }, icon('key')),
     it.totp && h('button', { class: 'ib', title: 'Copier le code 2FA', onclick: stop(async (b) => copy(await bg('totp', { id: it._id }), 'Code 2FA', b)) }, icon('clock')),
     h('button', { class: 'ib', title: 'Modifier', onclick: stop(() => openEditor(it)) }, icon('edit')));
   return h('div', {
     class: 'item',
-    onclick: () => (isWeb() ? fill(it) : copy(it.password, 'Mot de passe')),
+    onclick: () => (isWeb() ? fill(it) : copySecret(it)),
     onmouseenter: (e) => { sel = +e.currentTarget.dataset.idx; highlight(); },
-  }, avatar(name, it.icon, it), h('div', { class: 'meta' }, h('div', { class: 'n' }, name), h('div', { class: 'u' }, it.username || hostOf(it.uris?.[0]) || '')), acts);
+  }, avatar(name, it.icon, it), h('div', { class: 'meta' },
+    h('div', { class: 'n' }, name, it.fav && icon('star', 'fav')),
+    h('div', { class: 'u' }, it.username || hostOf(it.uris?.[0]) || '')), acts);
 }
 
 function highlight() {
@@ -301,7 +322,7 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     const it = flat[sel];
     if (e.shiftKey) copy(it.username, 'Identifiant');
-    else if (e.ctrlKey || e.metaKey || !isWeb()) copy(it.password, 'Mot de passe');
+    else if (e.ctrlKey || e.metaKey || !isWeb()) copySecret(it);
     else fill(it);
   }
 });
@@ -342,7 +363,8 @@ $('#gen-copy').onclick = (e) => copy($('#gen-pw').textContent, 'Mot de passe');
 
 // Création (sans argument : pré-remplie avec le site courant) ou modification d'une entrée.
 let editing = null;
-function openEditor(it = null) {
+async function openEditor(summary = null) {
+  const it = summary && await bg('item', { id: summary._id }); // entrée complète, demandée à l'ouverture
   editing = it;
   const f = $('#add-form');
   f.reset();
@@ -375,7 +397,7 @@ $('#edit-delete').onclick = async () => {
   if (!editing || !confirm(`Supprimer « ${editing.name || 'sans nom'} » ?`)) return;
   try {
     await bg('delete', { id: editing._id });
-    items = await bg('list');
+    items = await fetchList();
     closePanels();
     render();
     toast('Entrée supprimée');
@@ -402,7 +424,7 @@ $('#add-form').onsubmit = async (e) => {
     });
     if (iconHost(item) !== iconHost(editing || {})) { delete item.icon; delete item.iconTry; delete item.iconLazy; } // site changé
     await bg('save', { item });
-    items = await bg('list');
+    items = await fetchList();
     closePanels();
     render();
     toast(editing ? 'Modifié' : 'Enregistré');
@@ -477,7 +499,7 @@ $('#btn-sync').onclick = async (e) => {
   b.classList.add('spin');
   try {
     const changed = await bg('sync');
-    items = await bg('list');
+    items = await fetchList();
     st = await bg('status');
     renderStatus();
     render();
@@ -492,14 +514,14 @@ $('#btn-sync').onclick = async (e) => {
 
 // ------------------------------------------------------------------ démarrage
 
+performance.mark('bp:script'); // repères lus par tools/bench-extension.mjs
 hydrateIcons();
-if (isWindow) {
-  document.body.classList.add('window');
-  const w = await chrome.windows.getLastFocused({ windowTypes: ['normal'] }).catch(() => null);
-  if (w) [tab] = await chrome.tabs.query({ active: true, windowId: w.id });
-} else {
-  [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-}
-await route();
+if (isWindow) document.body.classList.add('window');
+// réponse demandée par boot.js dès le début du chargement (onglet, état, liste, premières icônes)
+const boot = await window.bpBoot.catch(() => null);
+const init = boot?.data || await bg('popup', { first: FIRST });
+performance.mark('bp:init');
+tab = init.tab;
+await route(init);
 // « Options » (clic droit sur l'icône) : ouvrir directement les réglages
 if (new URLSearchParams(location.search).has('options') && st?.unlocked) $('#btn-settings').click();

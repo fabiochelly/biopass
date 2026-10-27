@@ -1,0 +1,16 @@
+<!doctype html><meta charset=utf-8><title>Page lourde</title>
+<!-- Page de 30 000 éléments (application web lourde) : mesure du coût du script de l'extension au
+     focus d'un champ texte hors formulaire et au clic sur un bouton (tools/bench-extension.mjs). -->
+<style>body{font:14px sans-serif;padding:20px} .c{display:inline-block;width:8px;height:8px}</style>
+<input id="q" placeholder="Rechercher dans l'application"> <button id="b">Bouton</button>
+<div id="grid"></div>
+<script>
+  const grid = document.getElementById('grid');
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < 6000; i++) {
+    const row = document.createElement('div');
+    row.innerHTML = '<span class="c"></span><span><b>x</b></span><i></i>';
+    frag.append(row);
+  }
+  grid.append(frag);
+</script>

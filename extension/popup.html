@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>BioPass</title>
 <link rel="stylesheet" href="popup.css">
+<script src="boot.js"></script>
 <script type="module" src="popup.js"></script>
 </head>
 <body>
@@ -113,14 +114,14 @@
     <div class="me"><div id="me-avatar" class="avatar"></div><div><b id="me-user"></b><small id="me-server"></small></div></div>
     <label class="opt"><span>Verrouillage auto</span>
       <select id="opt-lock">
-        <option value="-1">Jamais (rester connecté)</option>
+        <option value="-1">Jamais</option>
         <option value="5">5 min</option>
         <option value="15">15 min</option>
         <option value="30">30 min</option>
         <option value="60">1 h</option>
         <option value="240">4 h</option>
         <option value="4320">72 h</option>
-        <option value="0">À la fermeture du navigateur</option>
+        <option value="0">À la fermeture</option>
       </select>
     </label>
     <p class="hint" id="lock-hint">« Jamais » : le coffre reste ouvert même après redémarrage du navigateur (la clé est conservée dans le profil du navigateur). Le cadenas verrouille quand vous voulez.</p>

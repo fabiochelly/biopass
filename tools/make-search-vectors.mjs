@@ -28,6 +28,6 @@ const out = queries.map((q) => ({ query: q, results: search(items, q).map((it) =
 writeFileSync(new URL('./search-vectors.json', import.meta.url), JSON.stringify({
   comment: 'Généré par make-search-vectors.mjs depuis core.js. Pour chaque requête : noms des entrées trouvées, dans l\'ordre exact.',
   fold: [['Impôts', fold('Impôts')], ['Œuvre Æther', fold('Œuvre Æther')], ['CRÉDIT', fold('CRÉDIT')]],
-  items: items.map(({ _fz, ...it }) => it), vectors: out,
+  items: items.map((it) => Object.fromEntries(Object.entries(it).filter(([k]) => !k.startsWith('_')))), vectors: out,
 }, null, 1));
 for (const v of out) console.log(JSON.stringify(v.query).padEnd(15), '→', v.results.join(', ') || '(aucun)');

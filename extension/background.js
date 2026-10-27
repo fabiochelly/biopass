@@ -2,7 +2,11 @@
 // La clé du coffre vit en mémoire (chrome.storage.session, jamais écrite sur disque) ;
 // le cache chiffré est dans chrome.storage.local. Les mots de passe ne sont transmis
 // à une page que si le domaine de la frame qui les demande correspond à l'entrée.
-import { Vault, matchesUrl, totp, hostOf, baseDomain, newId, generatePassword, withHistory } from './lib/core.js';
+import { Vault, matchesUrl, totp, hostOf, baseDomain, newId, generatePassword, withHistory, entryKind, search } from './lib/core.js';
+
+// Repères du démarrage (ms depuis le lancement du service worker), lus par tools/bench-extension.mjs.
+const boot = { started: Date.now() - Math.round(performance.now()), imports: Math.round(performance.now()) };
+const mark = (k) => { boot[k] = Math.round(performance.now()); };
 
 const storage = {
   get: async (k) => (await chrome.storage.local.get(k))[k],
@@ -21,8 +25,10 @@ let lastUser = {}; // tabId → { user, domain, t } : identifiant saisi à l'ét
 
 const ready = (async () => {
   prefs = { ...DEFAULT_PREFS, ...(await storage.get('prefs')) };
+  mark('prefs');
   applyActionMode().catch(() => {});
   await vault.load();
+  mark('load');
   let s = await chrome.storage.session.get(['rawKey', 'token', 'auth', 'pending', 'lastUser']);
   pending = s.pending || {};
   lastUser = s.lastUser || {};
@@ -31,13 +37,20 @@ const ready = (async () => {
   if (s.rawKey && vault.profile) {
     try {
       await vault.resume(s.rawKey, s.token, s.auth || null);
+      mark('resume');
       await persistSession();
     } catch {
       await lockVault();
     }
   }
   updateBadge();
+  mark('ready');
 })();
+
+// Service worker gardé actif tant que le coffre est ouvert. Chrome l'arrête après 30 s sans activité, et
+// chaque réveil coûte ~200 ms (lecture et déchiffrement du coffre) au popup comme au premier remplissage
+// d'une page. Un appel d'API repousse cet arrêt (Chrome 110+) ; coffre verrouillé : rien n'est retenu.
+setInterval(() => { if (vault.unlocked) chrome.runtime.getPlatformInfo(() => {}); }, 20000);
 
 // ------------------------------------------------------------------ état
 
@@ -299,6 +312,9 @@ async function handleContent(msg, sender) {
   switch (msg.type) {
     case 'state':
       return { configured: !!vault.profile, unlocked: vault.unlocked, inline: prefs.inline };
+    case 'focus': // champ de connexion touché : état et comptes du site en un seul aller-retour
+      return { configured: !!vault.profile, unlocked: vault.unlocked, inline: prefs.inline,
+        matches: vault.unlocked && prefs.inline ? matchesFor(sender.url).map(summary) : [] };
     case 'matches':
       return matchesFor(sender.url).map(summary);
     case 'creds': {
@@ -330,13 +346,17 @@ async function handleContent(msg, sender) {
   throw new Error('Message inconnu');
 }
 
+const statusOf = () => ({
+  configured: !!vault.profile, unlocked: vault.unlocked, online: vault.online && !!vault.api.token,
+  user: vault.profile?.user, server: vault.profile?.server, prefs,
+});
+
 async function handleExtension(msg) {
   switch (msg.type) {
+    case 'perf':
+      return boot;
     case 'status':
-      return {
-        configured: !!vault.profile, unlocked: vault.unlocked, online: vault.online && !!vault.api.token,
-        user: vault.profile?.user, server: vault.profile?.server, prefs,
-      };
+      return statusOf();
     case 'login':
       await vault.login(msg.server, msg.user, msg.password);
       await persistSession();
@@ -359,10 +379,39 @@ async function handleExtension(msg) {
       await lockVault();
       await vault.forget();
       return true;
+    case 'popup': {
+      // Ouverture du popup, en un seul aller-retour : état, onglet de la page, liste allégée et icônes des
+      // premières lignes affichées. La liste ne porte que ce qui est affiché ou cherché : ni mots de
+      // passe, ni notes, ni autres icônes (demandés au besoin).
+      const status = statusOf();
+      const w = await chrome.windows.getLastFocused({ windowTypes: ['normal'] }).catch(() => null);
+      const [tab] = w ? await chrome.tabs.query({ active: true, windowId: w.id }) : [];
+      const page = tab ? { id: tab.id, url: tab.url || '' } : null;
+      if (!vault.unlocked) return { status, tab: page };
+      touch();
+      const all = vault.list();
+      const first = [...(page ? all.filter((it) => matchesUrl(it, page.url)) : []), ...search(all, '').slice(0, msg.first || 0)];
+      return {
+        status,
+        tab: page,
+        list: all.map((it) => ({
+          _id: it._id, name: it.name, username: it.username, uris: it.uris, folder: it.folder, fav: it.fav,
+          hasPw: !!it.password, totp: !!it.totp, kind: entryKind(it), iconTone: it.iconTone, iconLazy: it.icon ? 1 : undefined,
+        })),
+        icons: Object.fromEntries(first.filter((it) => it.icon).map((it) => [it._id, it.icon])),
+      };
+    }
+    case 'item': { // entrée complète (éditeur du popup)
+      const { _fz, _fn, ...it } = vault.items.get(msg.id) || {};
+      return it._id ? it : null;
+    }
+    case 'secret': // un champ d'une entrée, au moment de le copier
+      touch();
+      return vault.items.get(msg.id)?.[msg.field === 'username' ? 'username' : 'password'] || '';
     case 'list':
       // sans les icônes (128 px : plusieurs Mo pour tout le coffre) : la popup demande celles qu'elle affiche
       touch();
-      return vault.list().map(({ _fz, icon, ...it }) => (icon ? { ...it, iconLazy: 1 } : it));
+      return vault.list().map(({ _fz, _fn, icon, ...it }) => (icon ? { ...it, iconLazy: 1 } : it));
     case 'icons':
       return Object.fromEntries(msg.ids.map((id) => [id, vault.items.get(id)?.icon || '']));
     case 'sync':

@@ -25,10 +25,30 @@
   const OTP_RE = /one.?time|otp|totp|2fa|mfa|two.?factor|verif|auth.?code|security.?code|code.?de.?s[ée]curit|token|pin.?code/i;
   const seenPassword = new WeakSet(); // champs mot de passe passés en clair par un bouton « afficher »
 
-  function deepInputs(root = document, out = []) {
-    for (const el of root.querySelectorAll('input')) out.push(el);
+  // Champs de la page, y compris dans les composants web (shadow DOM). Trouver ces composants oblige à
+  // visiter tous les éléments : coûteux sur une page lourde (Gmail, tableurs…), ce parcours n'est donc
+  // refait qu'au plus une fois par seconde. Les champs eux-mêmes sont toujours relus (requêtes natives).
+  let shadowRoots = [];
+  let shadowScanAt = -1e9;
+  function scanShadows(root) {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
-    for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.shadowRoot) deepInputs(n.shadowRoot, out);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (n.shadowRoot) {
+        shadowRoots.push(n.shadowRoot);
+        scanShadows(n.shadowRoot);
+      }
+    }
+  }
+  function deepInputs(near = null) {
+    const root = near?.getRootNode?.();
+    // champ touché dans un composant pas encore vu (apparu depuis le dernier parcours) : on reparcourt
+    if (performance.now() - shadowScanAt > 1000 || (root instanceof ShadowRoot && !shadowRoots.includes(root))) {
+      shadowScanAt = performance.now();
+      shadowRoots = [];
+      scanShadows(document);
+    }
+    const out = [...document.querySelectorAll('input')];
+    for (const r of shadowRoots) if (r.host.isConnected) out.push(...r.querySelectorAll('input'));
     return out;
   }
 
@@ -85,7 +105,7 @@
 
   // Trouve les champs à remplir autour du champ `anchor` (ou du meilleur formulaire de la page).
   function findLogin(anchor = null) {
-    const inputs = deepInputs().filter(visible);
+    const inputs = deepInputs(anchor).filter(visible);
     const passwords = inputs.filter(isPassword);
     const otp = (anchor && isOtp(anchor) && anchor) || inputs.find(isOtp) || null;
 
@@ -116,10 +136,11 @@
   function isLoginField(el) {
     if (!(el instanceof HTMLInputElement) || !visible(el)) return false;
     if (isPassword(el) || isOtp(el)) return true;
-    if (userScore(el) <= 0) return false;
+    const score = userScore(el);
+    if (score <= 0) return false;
+    if (score >= 5) return true; // identifiant évident : inutile de chercher un mot de passe autour
     const f = formOf(el);
-    const scope = f ? [...f.querySelectorAll('input')] : deepInputs();
-    return userScore(el) >= 5 || scope.some((p) => p.type === 'password');
+    return (f ? [...f.querySelectorAll('input')] : deepInputs(el)).some((p) => p.type === 'password');
   }
 
   // ---------------------------------------------------------------- remplissage
@@ -384,7 +405,7 @@
     if (!isLoginField(field)) return closeMenu();
     let state;
     try {
-      state = await send({ type: 'state' });
+      state = await send({ type: 'focus' }); // état + comptes du site en un seul aller-retour
     } catch {
       return;
     }
@@ -393,7 +414,7 @@
       if (!isPassword(field)) return;
       return showMenu(field, [{ name: 'Déverrouiller BioPass', sub: 'pour remplir ce formulaire', action: () => send({ type: 'openPopup' }) }]);
     }
-    menuMatches = await send({ type: 'matches' }).catch(() => []);
+    menuMatches = state.matches || [];
     matchesField = field;
     if (document.activeElement === e.target) renderMatches(field);
   }

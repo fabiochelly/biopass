@@ -267,9 +267,10 @@ export class Vault {
     await this._open(raw, null, false);
   }
 
-  // Reprise sans mot de passe (extension après redémarrage du service worker).
+  // Reprise sans mot de passe (extension après redémarrage du service worker, F5 du site).
+  // Le cache n'est relu que s'il ne l'a pas déjà été (plusieurs Mo avec les icônes).
   async resume(rawKeyB64, token, auth = null) {
-    await this.load();
+    if (!this.profile) await this.load();
     this.key = await importVaultKey(unb64(rawKeyB64), false);
     this.rawKey = rawKeyB64;
     this.auth = auth;
@@ -813,6 +814,12 @@ export function searchScore(it, terms) {
   return total + (it.fav ? 5 : 0);
 }
 
+// Prépare la recherche approximative d'une entrée à l'avance (temps libre après l'affichage) : la
+// première frappe n'a alors plus à le faire pour tout le coffre.
+export function prepareSearch(it) {
+  it._fz ??= fuzzyFields(it);
+}
+
 // Toutes les entrées si la requête est vide (favoris d'abord, puis ordre alphabétique) ;
 // sinon celles qui contiennent tous les termes, par score décroissant puis par nom.
 export function search(items, query) {
@@ -821,7 +828,9 @@ export function search(items, query) {
   for (const it of items) {
     const score = terms.length ? searchScore(it, terms) : (it.fav ? 1 : 0);
     if (terms.length && !score) continue;
-    scored.push([score, (it._fz ??= fuzzyFields(it)).name, it]); // nom normalisé déjà en cache
+    // clé de tri : nom normalisé, gardé en cache ; sans requête, inutile de préparer toute la recherche
+    // approximative (adresses analysées…) de chaque entrée : l'ouverture d'une liste reste immédiate
+    scored.push([score, it._fz?.name ?? (it._fn ??= fold(it.name)), it]);
   }
   scored.sort((a, b) => b[0] - a[0] || (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
   return scored.map((x) => x[2]);
