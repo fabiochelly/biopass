@@ -75,7 +75,6 @@ const savePrefs = () => localStorage.setItem('bp.prefs', JSON.stringify(prefs));
 
 const state = { mode: 'login', results: [], cursor: 0, selected: null, lastActive: Date.now(), lastSync: 0 };
 let totpTimer = null;
-let clipTimer = null;
 
 // ------------------------------------------------------------------ utilitaires
 
@@ -100,8 +99,7 @@ async function copy(text, label, btn) {
     btn.replaceChildren(icon('check'));
     setTimeout(() => { btn.classList.remove('done'); btn.replaceChildren(icon('copy')); }, 1200);
   }
-  clearTimeout(clipTimer);
-  clipTimer = setTimeout(() => navigator.clipboard.writeText('').catch(() => {}), 30000);
+  // le presse-papiers n'est jamais vidé automatiquement (choix délibéré)
 }
 
 // Icônes des sites : chaque data: URL devient une blob: URL réutilisée, pour que le navigateur ne

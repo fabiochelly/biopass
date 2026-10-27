@@ -1,7 +1,7 @@
 //! Réglages et session persistante (« Rester déverrouillé ») : expiration, effacement, reprise.
 
 use biopass::crypto::{self, b64};
-use biopass::session::{ClipboardClear, SessionFile, SessionStore, Settings, StayUnlocked};
+use biopass::session::{SessionFile, SessionStore, Settings, StayUnlocked};
 use biopass::vault::{Opened, Storage, Vault};
 use serde_json::{json, Map, Value};
 use zeroize::Zeroizing;
@@ -37,15 +37,15 @@ fn settings_defaults_and_persistence() {
     let d = tmp_dir();
     let path = d.join("settings.json");
     let s = Settings::load(&path);
-    assert_eq!(s.clipboard_clear, ClipboardClear::Never, "défaut : ne pas effacer le presse-papiers");
     assert_eq!(s.stay_unlocked, StayUnlocked::Hours48, "défaut : 48 h");
-    let s2 = Settings { clipboard_clear: ClipboardClear::Mins2, stay_unlocked: StayUnlocked::Always };
+    let s2 = Settings { stay_unlocked: StayUnlocked::Always };
     s2.save(&path).unwrap();
     assert_eq!(Settings::load(&path), s2);
     std::fs::write(&path, "pas du json").unwrap();
     assert_eq!(Settings::load(&path), Settings::default());
-    assert_eq!(ClipboardClear::Secs30.secs(), Some(30));
-    assert_eq!(ClipboardClear::Never.secs(), None);
+    // ancien fichier avec le réglage d'effacement du presse-papiers (supprimé) : toujours lisible
+    std::fs::write(&path, r#"{"clipboard_clear":"Secs30","stay_unlocked":"Always"}"#).unwrap();
+    assert_eq!(Settings::load(&path), s2);
     assert_eq!(StayUnlocked::Hours48.deadline(1_000), Some(1_000 + 48 * 3_600_000));
     assert_eq!(StayUnlocked::Mins5.deadline(0), Some(300_000));
     assert_eq!(StayUnlocked::Always.deadline(1_000), None);

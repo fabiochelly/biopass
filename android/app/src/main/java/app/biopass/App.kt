@@ -73,7 +73,6 @@ object Session {
     private val io = Executors.newSingleThreadExecutor()
     val main = Handler(Looper.getMainLooper())
     private var lastUse = 0L
-    private var clipSeq = 0
 
     fun init(ctx: Context) {
         if (::app.isInitialized) return
@@ -141,7 +140,7 @@ object Session {
         }
     }
 
-    /** Copie marquée sensible ; effacée au bout de 60 s si elle est toujours la nôtre. */
+    /** Copie marquée sensible (masquée dans l'aperçu d'Android 13+). Jamais effacée ensuite. */
     fun copy(ctx: Context, label: String, text: String, sensitive: Boolean = true) {
         val cm = ctx.getSystemService(ClipboardManager::class.java)
         val clip = ClipData.newPlainText("BioPass", text)
@@ -151,14 +150,5 @@ object Session {
         cm.setPrimaryClip(clip)
         // Android 13+ affiche sa propre confirmation de copie.
         if (Build.VERSION.SDK_INT < 33) Toast.makeText(ctx, "$label copié", Toast.LENGTH_SHORT).show()
-        if (!sensitive) return
-        val seq = ++clipSeq
-        main.postDelayed({
-            if (seq != clipSeq) return@postDelayed
-            try {
-                val d = cm.primaryClipDescription
-                if (d != null && d.label == "BioPass") cm.clearPrimaryClip()
-            } catch (e: Exception) { /* presse-papiers inaccessible en arrière-plan */ }
-        }, 60_000)
     }
 }

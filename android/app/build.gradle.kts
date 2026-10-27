@@ -18,8 +18,8 @@ android {
         applicationId = "app.biopass"
         minSdk = 28
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.3.5"
+        versionCode = 10
+        versionName = "1.3.6"
         // FLAG_SECURE (captures d'écran bloquées). « -PnoSecure » : uniquement pour les captures de test.
         resValue("bool", "bp_secure", if (project.hasProperty("noSecure")) "false" else "true")
     }

@@ -42,8 +42,6 @@ Synchronisation automatique au déverrouillage puis toutes les 5 minutes.
 
 ### Réglages (icône engrenage)
 
-- **Effacer le presse-papiers** après une copie : Jamais (défaut), 30 s, 2 min — seulement s'il
-  contient toujours la valeur copiée.
 - **Rester déverrouillé** : 5 min, 1 h, 8 h, 48 h (défaut), Toujours, comptés depuis la dernière
   utilisation, **même si l'application est fermée puis relancée**. Pendant ce temps, la clé du coffre
   et la clé d'authentification sont conservées sur ce poste dans `session.json` (permissions 0600) ;

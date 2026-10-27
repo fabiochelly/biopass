@@ -15,33 +15,6 @@ use crate::Error;
 // ------------------------------------------------------------------ réglages
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ClipboardClear {
-    Never,
-    Secs30,
-    Mins2,
-}
-
-impl ClipboardClear {
-    pub const ALL: [ClipboardClear; 3] = [ClipboardClear::Never, ClipboardClear::Secs30, ClipboardClear::Mins2];
-
-    pub fn secs(self) -> Option<u64> {
-        match self {
-            ClipboardClear::Never => None,
-            ClipboardClear::Secs30 => Some(30),
-            ClipboardClear::Mins2 => Some(120),
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            ClipboardClear::Never => "Jamais",
-            ClipboardClear::Secs30 => "30 s",
-            ClipboardClear::Mins2 => "2 min",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StayUnlocked {
     Mins5,
     Hour1,
@@ -81,16 +54,17 @@ impl StayUnlocked {
     }
 }
 
+/// Le presse-papiers n'est jamais vidé automatiquement (choix délibéré) : aucun réglage à ce sujet.
+/// Un ancien `settings.json` qui contient encore `clipboard_clear` reste lisible (champ ignoré).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
-    pub clipboard_clear: ClipboardClear,
     pub stay_unlocked: StayUnlocked,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { clipboard_clear: ClipboardClear::Never, stay_unlocked: StayUnlocked::Hours48 }
+        Settings { stay_unlocked: StayUnlocked::Hours48 }
     }
 }
 

@@ -55,7 +55,6 @@ const copySecret = async (it, btn, field = 'password') =>
 async function copy(text, label, btn) {
   if (!text) return;
   await navigator.clipboard.writeText(text);
-  bg('clipboardCopied').catch(() => {}); // le service worker l'effacera dans 30 s
   toast(`${label} copié`);
   if (btn) {
     const prev = btn.innerHTML;

@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use biopass::api::{display_server, parse_server, Session, SyncResponse};
 use biopass::model::Form;
 use biopass::util::{self, get_uris, GenOptions};
-use biopass::session::{ClipboardClear, SessionStore, Settings, StayUnlocked};
+use biopass::session::{SessionStore, Settings, StayUnlocked};
 use biopass::vault::{self, Change, Item, Opened, Storage, Vault};
 use biopass::{now_ms, Error};
 use eframe::egui::{
@@ -134,7 +134,6 @@ pub struct App {
     compact_detail: bool,
 
     clipboard: Option<arboard::Clipboard>,
-    clip: Option<(Zeroizing<String>, Instant)>,
     /// Textures des icônes de sites, décodées une seule fois (clé = empreinte de la data URL).
     icons: HashMap<u64, Option<theme::SiteIcon>>,
     last_sync: Instant,
@@ -198,7 +197,6 @@ impl App {
             compact: false,
             compact_detail: false,
             clipboard: arboard::Clipboard::new().ok(),
-            clip: None,
             icons: HashMap::new(),
             last_sync: Instant::now(),
             settings,
@@ -480,7 +478,6 @@ impl App {
     }
 
     fn lock(&mut self, reason: Option<String>) {
-        self.clear_clipboard_if_ours();
         self.vault.lock();
         self.icons.clear();
         self.sessions.clear(); // « Verrouiller » efface la clé conservée sur ce poste
@@ -518,25 +515,10 @@ impl App {
             }
             None => false,
         };
-        if ok && self.settings.clipboard_clear != ClipboardClear::Never {
-            self.clip = Some((Zeroizing::new(text.to_string()), Instant::now()));
-            self.toast(&format!("{what} copié · effacé dans {}", self.settings.clipboard_clear.label()), false);
-        } else if ok {
-            self.clip = None;
-            self.toast(&format!("{what} copié"), false);
-        } else {
+        if !ok {
             self.ctx.copy_text(text.to_string());
-            self.toast(&format!("{what} copié"), false);
         }
-    }
-
-    fn clear_clipboard_if_ours(&mut self) {
-        if let (Some((ours, _)), Some(cb)) = (&self.clip, &mut self.clipboard) {
-            if cb.get_text().ok().as_deref() == Some(ours.as_str()) {
-                let _ = cb.clear();
-            }
-        }
-        self.clip = None;
+        self.toast(&format!("{what} copié"), false); // jamais effacé ensuite
     }
 
     fn toast(&mut self, text: &str, error: bool) {
@@ -1423,21 +1405,6 @@ impl App {
                 });
                 ui.add_space(14.0);
 
-                theme::label(ui, "Effacer le presse-papiers après une copie");
-                ui.horizontal_wrapped(|ui| {
-                    for c in ClipboardClear::ALL {
-                        if choice_chip(ui, self.settings.clipboard_clear == c, c.label()) {
-                            self.settings.clipboard_clear = c;
-                            changed = true;
-                        }
-                    }
-                });
-                ui.label(
-                    RichText::new("Si activé, le presse-papiers n'est vidé que s'il contient encore la valeur copiée.")
-                        .size(12.5)
-                        .color(p.muted),
-                );
-                ui.add_space(16.0);
 
                 theme::label(ui, "Rester déverrouillé");
                 ui.horizontal_wrapped(|ui| {
@@ -1535,14 +1502,7 @@ impl eframe::App for App {
                 self.start_sync(false);
             }
         }
-        if let Some((_, at)) = &self.clip {
-            match self.settings.clipboard_clear.secs() {
-                Some(secs) if at.elapsed() >= Duration::from_secs(secs) => self.clear_clipboard_if_ours(),
-                None => self.clip = None, // réglage passé à « Jamais » : on ne touche plus au presse-papiers
-                _ => {}
-            }
-        }
-        if self.screen == Screen::Main || self.clip.is_some() {
+        if self.screen == Screen::Main {
             ctx.request_repaint_after(Duration::from_secs(1));
         }
     }
@@ -1571,7 +1531,6 @@ impl eframe::App for App {
 
 impl Drop for App {
     fn drop(&mut self) {
-        self.clear_clipboard_if_ours();
         // Fermeture : la session persistante est conservée (échéance à jour), pas effacée.
         if self.screen == Screen::Main && self.vault.unlocked() {
             self.persist_session();

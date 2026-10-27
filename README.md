@@ -200,7 +200,7 @@ d'accès.
   pour filtrer.
 - **Ctrl+Espace** remplit le dernier compte utilisé sur le site ; un nouvel appui passe au compte
   suivant.
-- **Ctrl+Maj+G** copie un mot de passe généré (presse-papiers vidé après 30 s).
+- **Ctrl+Maj+G** copie un mot de passe généré.
 - **Clic droit dans un champ** : « Remplir avec BioPass » ou « Générer un mot de passe ici ».
 - **Après une connexion**, un bandeau propose d'enregistrer le nouveau mot de passe ou de mettre à
   jour l'ancien.

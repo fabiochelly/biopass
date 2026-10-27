@@ -101,8 +101,8 @@ le mot de passe maître est changé ailleurs : il faut alors saisir le mot de pa
 - Cache local (`files/cache.json`) : uniquement des données chiffrées + salt/itérations/clé
   enveloppée, jamais de clair ni de jeton de session. Sauvegarde Android désactivée.
 - Hors ligne : déverrouillage depuis le cache, **lecture seule** (et saisie automatique).
-- Captures d'écran bloquées (`FLAG_SECURE`) ; copies marquées sensibles (Android 13+) et
-  effacées du presse-papiers après 60 s quand c'est possible.
+- Captures d'écran bloquées (`FLAG_SECURE`) ; copies marquées sensibles (Android 13+, masquées dans
+  l'aperçu du presse-papiers). Le presse-papiers n'est jamais vidé automatiquement.
 - HTTPS obligatoire (sauf `localhost`).
 
 ## Structure

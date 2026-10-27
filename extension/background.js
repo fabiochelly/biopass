@@ -117,7 +117,6 @@ chrome.alarms.create('sync', { periodInMinutes: 10 });
 chrome.alarms.onAlarm.addListener(async (a) => {
   await ready;
   if (a.name === 'autolock') await lockVault();
-  if (a.name === 'clipclear') clipboardWrite('').catch(() => {});
   if (a.name === 'sync') syncNow().then(() => backgroundIcons()).catch(() => {});
 });
 
@@ -202,15 +201,15 @@ function notify(tab, text) {
 async function clipboardWrite(text) {
   if (!(await chrome.offscreen.hasDocument())) {
     await chrome.offscreen.createDocument({
-      url: 'offscreen.html', reasons: ['CLIPBOARD'], justification: 'Copier un mot de passe généré et vider le presse-papiers ensuite',
+      url: 'offscreen.html', reasons: ['CLIPBOARD'], justification: 'Copier un mot de passe généré (raccourci clavier)',
     });
   }
   return chrome.runtime.sendMessage({ target: 'offscreen', type: 'copy', text });
 }
 
-function scheduleClipboardClear() {
-  chrome.alarms.create('clipclear', { delayInMinutes: 0.5 });
-}
+// Le presse-papiers n'est jamais vidé automatiquement (choix délibéré). Ancien effacement programmé
+// par une version précédente : annulé.
+chrome.alarms.clear('clipclear');
 
 // ------------------------------------------------------------------ enregistrement après connexion
 
@@ -454,8 +453,6 @@ async function handleExtension(msg) {
       const [status] = await new Promise((r) => chrome.runtime.requestUpdateCheck((s) => r([s])));
       return { status, current, latest };
     }
-    case 'clipboardCopied': // copie faite par la popup : effacer dans 30 s
-      return scheduleClipboardClear();
     case 'prefs':
       prefs = { ...prefs, ...msg.prefs };
       await storage.set('prefs', prefs);
@@ -485,8 +482,7 @@ async function runCommand(cmd, tab) {
   tab ??= (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
   if (cmd === 'generate') {
     await clipboardWrite(generatePassword({ length: 20 }));
-    scheduleClipboardClear();
-    return notify(tab, 'Mot de passe généré copié (effacé dans 30 s)');
+    return notify(tab, 'Mot de passe généré copié');
   }
   if (cmd !== 'autofill') return;
   if (!vault.unlocked) return openPopup();
