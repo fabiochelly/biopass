@@ -1,0 +1,155 @@
+# Binaires prêts à l'emploi, construits par GitHub.
+# - tag « v* » (ex. git tag v1.0.0 && git push origin v1.0.0) : construit tout et publie une Release ;
+# - lancement manuel (onglet Actions → Release → Run workflow) : construit seulement (artefacts du run).
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  desktop-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: desktop }
+      - name: Compilation
+        working-directory: desktop
+        run: cargo build --release
+      - name: Paquet
+        run: |
+          mkdir -p out/biopass
+          cp desktop/target/release/biopass out/biopass/
+          cp desktop/packaging/linux/biopass.desktop server/web/icon.svg out/biopass/
+          tar -C out -czf biopass-linux-x86_64.tar.gz biopass
+      - uses: actions/upload-artifact@v4
+        with: { name: desktop-linux, path: biopass-linux-x86_64.tar.gz }
+
+  desktop-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: desktop }
+      - name: Compilation
+        working-directory: desktop
+        run: cargo build --release
+      - name: Paquet
+        shell: pwsh
+        run: Compress-Archive -Path desktop/target/release/biopass.exe -DestinationPath biopass-windows-x86_64.zip
+      - uses: actions/upload-artifact@v4
+        with: { name: desktop-windows, path: biopass-windows-x86_64.zip }
+
+  desktop-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: 'aarch64-apple-darwin,x86_64-apple-darwin' }
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: desktop }
+      - name: Compilation (Apple Silicon et Intel)
+        working-directory: desktop
+        run: |
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+      - name: BioPass.app (binaire universel)
+        run: |
+          APP=out/BioPass.app/Contents
+          mkdir -p "$APP/MacOS" "$APP/Resources"
+          lipo -create -output "$APP/MacOS/biopass" \
+            desktop/target/aarch64-apple-darwin/release/biopass desktop/target/x86_64-apple-darwin/release/biopass
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' desktop/Cargo.toml | head -1)
+          sed "s/@VERSION@/$VERSION/" desktop/packaging/macos/Info.plist > "$APP/Info.plist"
+          ICONSET=out/biopass.iconset
+          mkdir -p "$ICONSET"
+          for s in 16 32 128 256 512; do
+            sips -z $s $s server/web/icon-512.png --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
+            sips -z $((s * 2)) $((s * 2)) server/web/icon-512.png --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
+          done
+          iconutil -c icns "$ICONSET" -o "$APP/Resources/biopass.icns"
+          codesign --force --deep --sign - out/BioPass.app   # signature ad hoc (pas de compte Apple)
+          (cd out && ditto -c -k --keepParent BioPass.app ../BioPass-macos.zip)
+      - uses: actions/upload-artifact@v4
+        with: { name: desktop-macos, path: BioPass-macos.zip }
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Clé de signature des releases
+        env:
+          ANDROID_SIGNING: ${{ secrets.ANDROID_SIGNING }}
+        run: |
+          # Secret ANDROID_SIGNING = tar (biopass.jks + keystore.properties) en base64. Sans lui, build.sh crée
+          # une clé jetable : l'APK s'installe, mais une version suivante ne pourra pas la mettre à jour.
+          if [ -n "$ANDROID_SIGNING" ]; then
+            mkdir -p android/signing && echo "$ANDROID_SIGNING" | base64 -d | tar -x -C android/signing
+          else
+            echo "::warning::Secret ANDROID_SIGNING absent : APK signée avec une clé jetable"
+            echo "ANDROID_EPHEMERAL_KEY=1" >> "$GITHUB_ENV"
+          fi
+      - name: Compilation (Docker)
+        working-directory: android
+        run: ./build.sh
+      - name: Paquet
+        run: |
+          cp android/dist/biopass.apk biopass-android.apk
+          echo "${ANDROID_EPHEMERAL_KEY:-0}" > android-ephemeral-key
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: |
+            biopass-android.apk
+            android-ephemeral-key
+
+  server:
+    needs: android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: android }
+      - name: Extension (zip) et serveur prêt à déposer
+        run: |
+          mkdir -p android/dist && cp biopass-android.apk android/dist/biopass.apk
+          BIOPASS_NO_DEPLOY=1 tools/build-server.sh
+          cp server/web/downloads/biopass-extension.zip biopass-extension.zip
+          # serveur : uniquement ce qui se dépose sur le site (ni web/ ni data/ ni config.php)
+          mkdir -p out/biopass
+          cp -r server/index.php server/api.php server/web.php server/downloads.php server/config.sample.php \
+            server/src server/bin out/biopass/
+          (cd out && zip -qr ../biopass-server.zip biopass)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server
+          path: |
+            biopass-server.zip
+            biopass-extension.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [desktop-linux, desktop-windows, desktop-macos, android, server]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - name: Publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTES=.github/release-notes.md
+          if [ "$(cat dist/android-ephemeral-key)" = 1 ]; then
+            printf '\n> ⚠️ APK signée avec une clé jetable : désinstallez la version précédente avant de l’installer.\n' >> "$NOTES"
+          fi
+          gh release create "$GITHUB_REF_NAME" --title "BioPass $GITHUB_REF_NAME" --notes-file "$NOTES" \
+            dist/biopass-linux-x86_64.tar.gz dist/biopass-windows-x86_64.zip dist/BioPass-macos.zip \
+            dist/biopass-android.apk dist/biopass-extension.zip dist/biopass-server.zip

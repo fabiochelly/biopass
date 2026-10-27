@@ -3,6 +3,7 @@ server/config.php
 server/data/
 deploy.conf
 android/signing/
+android/signing-github/
 extension-signing/
 *.jks
 *.pem

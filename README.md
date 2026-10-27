@@ -28,6 +28,7 @@ BioPass reste invisible pour les robots et les curieux.
 - [Fonctionnalités](#fonctionnalités)
 - [Comment ça marche](#comment-ça-marche)
 - [Sécurité](#sécurité)
+- [Téléchargements](#téléchargements)
 - [Installation du serveur](#installation-du-serveur)
 - [Les applications](#les-applications)
 - [Migrer depuis Bitwarden](#migrer-depuis-bitwarden)
@@ -121,11 +122,38 @@ tout dossier existant. Un nom de dossier imprévisible supprime cet indice.
 
 </details>
 
+## Téléchargements
+
+Chaque version est construite par GitHub et publiée dans les
+**[Releases](https://github.com/fabiochelly/biopass/releases/latest)**, prête à l'emploi :
+
+| Fichier | Pour |
+|---|---|
+| `biopass-server.zip` | le serveur, déjà construit : à déposer, puis configurer (étapes 1, 3 et 4 ci-dessous) |
+| `biopass-extension.zip` | l'extension Brave / Chrome |
+| `biopass-android.apk` | l'application Android |
+| `BioPass-macos.zip` | l'application de bureau macOS 11+ (Apple Silicon et Intel) |
+| `biopass-windows-x86_64.zip` | l'application de bureau Windows |
+| `biopass-linux-x86_64.tar.gz` | l'application de bureau Linux |
+
+Les applications ne sont pas signées par Apple ni par Microsoft. Sur **macOS**, ouvrez BioPass la
+première fois par clic droit → **Ouvrir** (ou `xattr -dr com.apple.quarantine /Applications/BioPass.app`).
+Sur **Windows**, SmartScreen peut demander « Informations complémentaires » → « Exécuter quand même ».
+
+**iPhone et iPad** : utilisez l'application web. Dans Safari, « Ajouter à l'écran d'accueil » donne
+une application plein écran, utilisable hors connexion. Il n'existe pas encore d'application iOS
+native avec saisie automatique : les contributions sont les bienvenues (le protocole est décrit dans
+[PROTOCOL.md](PROTOCOL.md) et vérifiable avec les vecteurs de test de `tools/`).
+
 ## Installation du serveur
 
 **Prérequis :** un site PHP 8.1+ en HTTPS (nginx + PHP-FPM, ou Apache), avec l'extension `curl`
-pour les icônes. OPcache est recommandé. Pour construire : PHP en ligne de commande, `zip`,
-`openssl` et un Chromium (pour signer l'extension).
+pour les icônes. OPcache est recommandé.
+
+Le plus simple : décompressez `biopass-server.zip` (voir [Téléchargements](#téléchargements)) dans un
+dossier de votre site, puis suivez les étapes 1, 3 et 4 en partant de `biopass/config.sample.php`.
+Construire depuis les sources (étape 2) demande PHP en ligne de commande, `zip`, `openssl`, et un
+Chromium pour signer l'extension.
 
 ### 1. Configurer
 
@@ -225,6 +253,9 @@ Installation, au choix (menu ☰ → **Applications et extension** du site) :
 Client natif en Rust (egui) : un binaire unique, ouverture instantanée et recherche immédiate.
 Il est pensé pour retrouver et copier un identifiant au clavier en une seconde.
 
+Binaires prêts à l'emploi dans les [Releases](https://github.com/fabiochelly/biopass/releases/latest),
+ou depuis les sources :
+
 ```sh
 cd desktop && cargo build --release
 packaging/linux/install.sh      # Linux : lanceur et icônes pour l'utilisateur courant, sans sudo
@@ -243,7 +274,8 @@ minimum.
 cd android && ./build.sh        # compilation dans Docker uniquement → dist/biopass.apk
 ```
 
-L'APK est ensuite proposée en téléchargement par le site. Installation, réglage de Chrome et Brave,
+L'APK est aussi publiée dans les [Releases](https://github.com/fabiochelly/biopass/releases/latest),
+et proposée en téléchargement par le site. Installation, réglage de Chrome et Brave,
 et fonctionnement : [android/README.md](android/README.md).
 
 ## Migrer depuis Bitwarden
@@ -299,6 +331,21 @@ tools/test-all.sh                 # serveur, sauvegardes, Send, extension (Chrom
 - `tools/test-sites/` rassemble des pages de connexion piégeuses (deux étapes, shadow DOM, iframe
   d'un autre domaine, champs à la React) ; ajoutez-y tout site qui pose problème à l'extension.
 
+### Publier une version
+
+```sh
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+Le workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) construit alors
+l'application de bureau (Linux, Windows, macOS universel), l'APK, l'extension et le serveur, puis
+publie la Release. Il peut aussi être lancé à la main (onglet Actions) pour construire sans publier.
+
+L'APK des Releases est signée par une clé dédiée, fournie dans le secret `ANDROID_SIGNING` du dépôt
+(archive tar de `biopass.jks` et `keystore.properties`, encodée en base64). La même clé doit servir
+à chaque version, sinon Android refuse la mise à jour. Sans ce secret, une clé jetable est utilisée
+et la Release le signale.
+
 ## Limites connues
 
 - Pas de partage d'entrées entre les membres de la famille : un coffre par personne. Send permet
@@ -306,6 +353,7 @@ tools/test-all.sh                 # serveur, sauvegardes, Send, extension (Chrom
 - Hors connexion, les coffres sont consultables mais pas modifiables : le serveur reste la source
   de vérité.
 - Les passkeys ne sont pas gérées.
+- Pas d'application iOS native (l'application web fonctionne sur iPhone, sans saisie automatique).
 
 ## Licence
 

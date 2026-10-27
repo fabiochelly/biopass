@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- BioPass.app : assemblé par .github/workflows/release.yml (@VERSION@ = version de Cargo.toml). -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>BioPass</string>
+  <key>CFBundleDisplayName</key><string>BioPass</string>
+  <key>CFBundleIdentifier</key><string>app.biopass.desktop</string>
+  <key>CFBundleExecutable</key><string>biopass</string>
+  <key>CFBundleIconFile</key><string>biopass</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>@VERSION@</string>
+  <key>CFBundleVersion</key><string>@VERSION@</string>
+  <key>CFBundleDevelopmentRegion</key><string>fr</string>
+  <key>LSMinimumSystemVersion</key><string>11.0</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
+  <key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>
