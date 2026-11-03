@@ -43,7 +43,7 @@ async function attach(url, probe = '') {
   return t;
 }
 const median = (a) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
-const fmt = (v) => (v == null ? '—' : `${Math.round(v)} ms`);
+const fmt = (v) => (v == null ? '—' : `${v < 10 ? v.toFixed(1) : Math.round(v)} ms`);
 const results = [];
 const row = (label, values) => { results.push([label, values]); console.log(label.padEnd(58), values.map(fmt).join('   ')); };
 
@@ -226,6 +226,22 @@ try {
       row('Page lourde (30 000 éléments) : focus d’un champ texte (médiane, pire)', t.slice(0, 2));
       row('Page lourde (30 000 éléments) : clic sur un bouton (médiane, pire)', t.slice(2));
       await heavy.close();
+    }
+    // --- chargement d'une page : coût des scripts injectés partout (page.js en début de document,
+    // content.js en fin) ; temps de script du renderer = page + extension, mesuré par Chromium
+    {
+      const pg = await attach('about:blank'); await pg.cpu(rate);
+      await send('Performance.enable', {}, pg.sessionId);
+      const script = async () => (await send('Performance.getMetrics', {}, pg.sessionId)).metrics.find((m) => m.name === 'ScriptDuration').value * 1000;
+      const nav = [];
+      for (let i = 0; i < RUNS * 2; i++) {
+        const s0 = await script();
+        await pg.go(`http://site.localhost:8766/simple.html?${i}`); await sleep(700);
+        const [dcl, load] = await pg.js(`(() => { const n = performance.getEntriesByType('navigation')[0]; return [n.domContentLoadedEventEnd, n.loadEventEnd]; })()`);
+        nav.push([dcl, load, (await script()) - s0]);
+      }
+      row('Chargement d’une page de connexion : DOMContentLoaded, load, temps de script', [0, 1, 2].map((k) => median(nav.map((x) => x[k]))));
+      await pg.close();
     }
   }
 } catch (e) { console.log('ERREUR', e.stack); process.exitCode = 1; }

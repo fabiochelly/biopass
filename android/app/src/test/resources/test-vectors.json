@@ -5,7 +5,7 @@
   "iter": 600000,
   "auth": "Najg8KojwscrbWpqIyvG/ZoabBDS+ATM7Nm8T6ZmJjw=",
   "vaultKeyRawB64": "//79/Pv6+fj39vX08/Lx8O/u7ezr6uno5+bl5OPi4eA=",
-  "wrapped": "BfgTlkhs95CRfveu4J0nOk8acDrf7mE5gNpKDT/IqChbsXggdVV7PK1jy50cdjjrsuzhNA0PV4zSqxVU",
+  "wrapped": "IcZ4vfyiwL+FoRGMwteBsoT7Yat2ghha9JmBOPILcqf4zCzzFxmRPJmvoHQFT+8oyKumkD5de4aE0Uzi",
   "itemId": "0123456789abcdef0123456789abcdef",
   "item": {
     "type": "login",
@@ -20,7 +20,7 @@
     "created": 1,
     "updated": 2
   },
-  "itemEnc": "Hbiaf8OteruwGRS5fCF/uzO/Ou0QLhxrD3ZmGRD9aM7msibhOWqIwhvkRXEqi7S+vHcbIx6zu6EtSl5T7NEirVW0W0XDM8EJ2ju5sqGBcC7iBZVLaDGWBig+NXh3rW0rNGJJwm7lm3OrSvPvmEqunE669eJWcduQdX7wWKLHD3V580ln9rrRwog1fVhnVSonkwA+icQW6YaipE0WEn2qE6xQeSSj9hHfjnBi9BftAmU=",
+  "itemEnc": "rKS5m20lDGo0gGbTZ7pnwSFFpsig0Rc8aqAsXA5X7Akp84cDKuVK/MmBMDeBKHjUuBsmXycqz9l9z9VVPUDnYyLC16iVre1usUn4PNRCDzrXEvj8aCzKgcKe2GVwSf2ETPcF4zgrB0YLvbaafj8+dku7tAla/WEeBadRtlCX2yNr16qQ6M3PrTs+DAvHGKuARmO5NEXzlYMedYIkRjMhnSt+3V6oCaKET/rMLucHJIo=",
   "totp": [
     {
       "secret": "JBSWY3DPEHPK3PXP",
@@ -33,6 +33,20 @@
       "code": "46119246"
     }
   ],
+  "passkey": {
+    "passkey": {
+      "credentialId": "gfBgVg2tSQxNnOeE_XPOng",
+      "rpId": "example.com",
+      "rpName": "Exemple",
+      "userHandle": "AQID",
+      "userName": "fabio",
+      "userDisplayName": "",
+      "key": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg7mhwVVMsR5RBXR85zHvV5jQGmiOPoPi7ZwVRv3pqvuihRANCAAS6ml1RTP5L9Ha8JXzMoK4vtUpYy1L8vH5VINbqZ8kRMLE3RyB_l5HAJkeNWUAvbmCkrtciQltRJjlZgKJrVBVo",
+      "counter": 0,
+      "created": 1793168323855
+    },
+    "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEuppdUUz-S_R2vCV8zKCuL7VKWMtS_Lx-VSDW6mfJETCxN0cgf5eRwCZHjVlAL25gpK7XIkJbUSY5WYCia1QVaA"
+  },
   "baseDomain": [
     [
       "www.google.com",

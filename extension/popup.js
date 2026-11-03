@@ -29,6 +29,7 @@ let tab = null;
 let items = [];
 let flat = [];
 let sel = 0;
+let partial = false; // liste servie par l'instantané léger du service worker : icônes et état serveur à suivre
 const pageUrl = () => tab?.url || '';
 const isWeb = () => /^https?:/.test(pageUrl());
 
@@ -93,6 +94,7 @@ function busy(form, on) {
 async function route(init = null) {
   init ??= await bg('popup', { first: FIRST });
   st = init.status;
+  partial = !!init.partial;
   if (!st.configured) {
     show('setup');
     $('#setup-form').server.focus();
@@ -166,6 +168,7 @@ function loadMain(list) {
   idle(prep);
   $('#q').focus();
   bg('sync').then(async (changed) => {
+    partial = false;
     if (changed) {
       items = await fetchList();
       render();
@@ -187,6 +190,7 @@ function renderStatus() {
 // frappe suivante).
 const FIRST = 12; // lignes visibles dans le popup (580 px)
 let renderToken = 0;
+let introDone = false;
 const rowCaches = { site: new WeakMap(), all: new WeakMap() };
 const idle = (f) => (window.requestIdleCallback ? requestIdleCallback(f, { timeout: 200 }) : setTimeout(f, 16));
 
@@ -246,24 +250,33 @@ function render() {
   const paint = () => {
     if (token !== renderToken) return;
     box.replaceChildren(...nodes.slice(0, FIRST).map(toEl));
+    if (!introDone) { // première liste : lignes en cascade (CSS, transform/opacity), jamais pendant la recherche
+      introDone = true;
+      box.classList.add('intro');
+      box.querySelectorAll('.item').forEach((el, i) => el.style.setProperty('--i', i));
+      setTimeout(() => box.classList.remove('intro'), 900);
+    }
     performance.mark('bp:rows');
     highlight();
     idle(more);
   };
   const first = rowsOf(nodes.slice(0, FIRST));
-  if (first.some((it) => it.iconLazy && it.icon === undefined)) loadIcons(first).then(paint);
-  else paint();
+  if (!first.some((it) => it.iconLazy && it.icon === undefined)) paint();
+  else if (!partial) loadIcons(first).then(paint);
+  else { // pas d'attente du coffre complet : lignes tout de suite, leurs icônes dès qu'elles arrivent
+    paint();
+    loadIcons(first).then(() => token === renderToken && render());
+  }
 }
 
 function row(it) {
   const name = it.name || hostOf(it.uris?.[0]) || '(sans nom)';
   const stop = (fn) => (e) => { e.stopPropagation(); fn(e.currentTarget); };
   const acts = h('div', { class: 'acts' },
-    isWeb() && (it.username || it.hasPw) && h('button', { class: 'ib fill', title: 'Remplir', onclick: stop(() => fill(it)) }, icon('fill')),
     it.username && h('button', { class: 'ib', title: 'Copier l\'identifiant', onclick: stop((b) => copy(it.username, 'Identifiant', b)) }, icon('user')),
     it.hasPw && h('button', { class: 'ib', title: 'Copier le mot de passe', onclick: stop((b) => copySecret(it, b)) }, icon('key')),
     it.totp && h('button', { class: 'ib', title: 'Copier le code 2FA', onclick: stop(async (b) => copy(await bg('totp', { id: it._id }), 'Code 2FA', b)) }, icon('clock')),
-    h('button', { class: 'ib', title: 'Modifier', onclick: stop(() => openEditor(it)) }, icon('edit')));
+    h('button', { class: 'ib edit', title: 'Modifier', onclick: stop(() => openEditor(it)) }, icon('edit')));
   return h('div', {
     class: 'item',
     onclick: () => (isWeb() ? fill(it) : copySecret(it)),

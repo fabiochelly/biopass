@@ -2,16 +2,24 @@
 // La clé du coffre vit en mémoire (chrome.storage.session, jamais écrite sur disque) ;
 // le cache chiffré est dans chrome.storage.local. Les mots de passe ne sont transmis
 // à une page que si le domaine de la frame qui les demande correspond à l'entrée.
-import { Vault, matchesUrl, totp, hostOf, baseDomain, newId, generatePassword, withHistory, entryKind, search } from './lib/core.js';
+import { Vault, matchesUrl, pageKey, totp, hostOf, baseDomain, newId, generatePassword, withHistory, entryKind, search, createPasskey, signPasskey, rpIdAllowed, importVaultKey, encryptItem, decryptItem, b64, unb64 } from './lib/core.js';
 
 // Repères du démarrage (ms depuis le lancement du service worker), lus par tools/bench-extension.mjs.
 const boot = { started: Date.now() - Math.round(performance.now()), imports: Math.round(performance.now()) };
 const mark = (k) => { boot[k] = Math.round(performance.now()); };
 
+// Chaque écriture du cache du coffre incrémente vaultGen : l'instantané léger (cf. writeLite) n'est
+// utilisé au démarrage que s'il a été fait depuis la dernière écriture.
+let vaultGen = 0;
+let liteGen = -1;
 const storage = {
   get: async (k) => (await chrome.storage.local.get(k))[k],
-  set: (k, v) => chrome.storage.local.set({ [k]: v }),
-  remove: (k) => chrome.storage.local.remove(k),
+  set: (k, v) => {
+    if (k !== 'vault') return chrome.storage.local.set({ [k]: v });
+    scheduleLite();
+    return chrome.storage.local.set({ vault: v, vaultGen: ++vaultGen });
+  },
+  remove: (k) => chrome.storage.local.remove(k === 'vault' ? ['vault', 'lite'] : k),
 };
 
 const vault = new Vault(storage, { keepRaw: true });
@@ -21,31 +29,88 @@ const DEFAULT_PREFS = { lock: -1, inline: true, savePrompt: true, window: false 
 let prefs = { ...DEFAULT_PREFS };
 const nonces = new Map(); // nonce → { tabId, expires } : autorise un remplissage forcé demandé par l'utilisateur
 let pending = {}; // tabId → proposition d'enregistrement
+let refused = {}; // tabId → { domain, url, tags } : propositions refusées, cf. dismissSave
 let lastUser = {}; // tabId → { user, domain, t } : identifiant saisi à l'étape 1 d'une connexion en deux temps
 
-const ready = (async () => {
-  prefs = { ...DEFAULT_PREFS, ...(await storage.get('prefs')) };
+// Démarrage en deux temps. `quick` : de quoi remplir les pages en quelques ms — préférences, profil et
+// instantané léger du coffre (entrées sans icônes, une seule valeur chiffrée). `ready` : coffre complet
+// (cache de plusieurs Mo avec les icônes, entrées déchiffrées une à une), session serveur.
+let session = {};
+let loaded = false; // cache complet lu : l'instantané ne doit plus remplacer les entrées
+let settled = false; // démarrage terminé (coffre complet, session serveur reprise)
+const small = Promise.all([
+  chrome.storage.local.get(['prefs', 'profile', 'lite', 'vaultGen', 'lastUsed', 'persist']),
+  chrome.storage.session.get(['rawKey', 'token', 'auth', 'pending', 'refused', 'lastUser']),
+]);
+const fast = (async () => {
+  const [l, s] = await small;
   mark('prefs');
+  prefs = { ...DEFAULT_PREFS, ...l.prefs };
   applyActionMode().catch(() => {});
-  await vault.load();
-  mark('load');
-  let s = await chrome.storage.session.get(['rawKey', 'token', 'auth', 'pending', 'lastUser']);
+  vaultGen = l.vaultGen || 0;
+  liteGen = l.lite?.gen ?? -1;
   pending = s.pending || {};
+  refused = s.refused || {};
   lastUser = s.lastUser || {};
-  lastUsed = (await storage.get('lastUsed')) || {};
-  if (!s.rawKey && prefs.lock < 0) s = { ...s, ...(await storage.get('persist')) }; // redémarrage du navigateur
-  if (s.rawKey && vault.profile) {
+  lastUsed = l.lastUsed || {};
+  session = !s.rawKey && prefs.lock < 0 ? { ...s, ...l.persist } : s; // redémarrage du navigateur
+  vault.profile = l.profile || null;
+  if (!session.rawKey || !vault.profile) return true; // verrouillé : l'état suffit
+  if (liteGen !== vaultGen) return false;
+  try {
+    const key = await importVaultKey(unb64(session.rawKey), false);
+    const items = await decryptItem(key, 'lite', l.lite.enc);
+    if (loaded) return true;
+    vault.key = key;
+    vault.items = new Map(items.map((it) => [it._id, it]));
+    mark('lite');
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
+const ready = (async () => {
+  await small; // fast a déjà lu préférences et session (sa suite s'exécute avant celle-ci)
+  await vault.load();
+  loaded = true;
+  mark('load');
+  if (session.rawKey && vault.profile) {
     try {
-      await vault.resume(s.rawKey, s.token, s.auth || null);
+      await vault.resume(session.rawKey, session.token, session.auth || null);
       mark('resume');
       await persistSession();
+      if (liteGen !== vaultGen) scheduleLite(); // plus tard : ne pas retarder les premières demandes
     } catch {
       await lockVault();
     }
-  }
+  } else vault.lock();
   updateBadge();
+  settled = true;
   mark('ready');
 })();
+const quick = fast.then((ok) => (ok ? null : ready));
+
+// Instantané léger : les entrées sans leurs icônes (~10 Ko chacune), chiffrées d'un bloc avec la clé du
+// coffre (comme le cache). Réécrit peu après chaque écriture du cache. Seules restent les icônes des
+// premières lignes du popup et des dernières entrées remplies (_ic : icône laissée dans le coffre complet).
+const LITE_ICONS = 40;
+let liteTimer = 0;
+function scheduleLite(delay = 1500) {
+  clearTimeout(liteTimer);
+  liteTimer = setTimeout(() => writeLite().catch(() => {}), delay);
+}
+async function writeLite() {
+  if (!vault.unlocked || !vault.cache.rev && !vault.items.size) return;
+  const gen = vaultGen;
+  const all = vault.list();
+  const keep = new Set([...search(all, '').slice(0, 16).map((it) => it._id), ...Object.values(lastUsed).reverse()].slice(0, LITE_ICONS));
+  const items = all.map(({ icon, _fz, _fn, ...it }) => (icon ? (keep.has(it._id) ? { ...it, icon } : { ...it, _ic: 1 }) : it));
+  const enc = await encryptItem(vault.key, 'lite', items);
+  if (gen !== vaultGen) return; // cache réécrit entre-temps : un autre instantané est prévu
+  await chrome.storage.local.set({ lite: { gen, enc } });
+  liteGen = gen;
+}
 
 // Service worker gardé actif tant que le coffre est ouvert. Chrome l'arrête après 30 s sans activité, et
 // chaque réveil coûte ~200 ms (lecture et déchiffrement du coffre) au popup comme au premier remplissage
@@ -65,6 +130,7 @@ async function persistSession() {
 async function lockVault() {
   vault.lock();
   pending = {};
+  refused = {};
   await chrome.storage.session.clear();
   await storage.remove('persist');
   chrome.alarms.clear('autolock');
@@ -122,7 +188,7 @@ chrome.alarms.onAlarm.addListener(async (a) => {
 
 // ------------------------------------------------------------------ remplissage
 
-const summary = (it) => ({ id: it._id, name: it.name || hostOf(it.uris?.[0]) || '(sans nom)', username: it.username || '', hasTotp: !!it.totp, icon: it.icon || '', tone: it.iconTone || '' });
+const summary = (it) => ({ id: it._id, name: it.name || hostOf(it.uris?.[0]) || '(sans nom)', username: it.username || '', hasPw: !!it.password, hasTotp: !!it.totp, icon: it.icon || '', tone: it.iconTone || '' });
 
 // Icônes des sites manquantes : en arrière-plan, quelques sites à la fois (ne ralentit rien).
 let iconsRunning = false;
@@ -138,15 +204,27 @@ let lastUsed = {};
 function markUsed(url, id) {
   const d = baseDomain(hostOf(url));
   if (!d || lastUsed[d] === id) return;
+  delete lastUsed[d]; // en dernier : les plus récents gardent leur icône dans l'instantané léger
   lastUsed[d] = id;
   storage.set('lastUsed', lastUsed);
+}
+
+// Domaines de base des adresses d'une entrée, calculés une fois (une entrée modifiée est un nouvel objet) :
+// la recherche des comptes d'un site ne réanalyse plus toutes les adresses du coffre à chaque focus.
+const domainsOf = new WeakMap();
+function domains(it) {
+  let d = domainsOf.get(it);
+  if (!d) domainsOf.set(it, (d = new Set((it.uris || []).map((u) => baseDomain(hostOf(u))))));
+  return d;
 }
 
 // Entrées du site : la dernière utilisée d'abord, puis favorites, puis les plus récentes.
 function matchesFor(url) {
   if (!vault.unlocked || !/^https?:/.test(url || '')) return [];
-  const last = lastUsed[baseDomain(hostOf(url))];
-  return vault.list().filter((it) => it.password || it.username || it.totp).filter((it) => matchesUrl(it, url))
+  const d = baseDomain(hostOf(url));
+  const last = lastUsed[d];
+  // portée « hôte » : pas de préfiltre (un hôte saisi peut être lui-même un suffixe public)
+  return vault.list().filter((it) => (it.password || it.username || it.totp) && (it.match === 'host' || domains(it).has(d)) && matchesUrl(it, url))
     .sort((a, b) => ((b._id === last) - (a._id === last)) || (b.fav - a.fav) || (b.updated || 0) - (a.updated || 0));
 }
 
@@ -214,7 +292,7 @@ chrome.alarms.clear('clipclear');
 // ------------------------------------------------------------------ enregistrement après connexion
 
 async function savePending() {
-  await chrome.storage.session.set({ pending, lastUser });
+  await chrome.storage.session.set({ pending, refused, lastUser });
 }
 
 function pickPassword(values) {
@@ -241,17 +319,18 @@ async function captured(msg, sender) {
   const lu = lastUser[sender.tab.id];
   if (!username && lu && lu.domain === domain && Date.now() - lu.t < 600000) username = lu.user;
 
+  // comptes existants du site : proposés dans le bandeau (« Modifier »), jamais choisis d'office —
+  // sauf celui dont l'identifiant correspond exactement à celui saisi, présélectionné
   const matches = matchesFor(url);
-  const same = matches.find((it) => (it.username || '').toLowerCase() === username.toLowerCase())
-    || (!username && matches.length === 1 ? matches[0] : null);
-  if (same && same.password === password) return;
-  if (!same && matches.some((it) => it.password === password)) return;
+  const same = username ? matches.find((it) => (it.username || '').toLowerCase() === username.toLowerCase()) : null;
+  if (same ? same.password === password : matches.some((it) => it.password === password)) return;
 
-  const origin = new URL(url).origin;
-  pending[sender.tab.id] = {
-    kind: same ? 'update' : 'add', id: same?._id || null, name: same?.name || hostOf(url).replace(/^www\./, ''),
-    username: same ? same.username : username, password, origin, t: Date.now(),
-  };
+  // déjà proposé et bandeau encore ouvert : le recréer ferait perdre ce qui y a été saisi
+  const open = pendingFor(sender.tab.id);
+  if (open && open.password === password && open.username === username) return;
+  if (await isRefused(sender.tab.id, domain, pageKey(url), password, msg.weak)) return;
+
+  pending[sender.tab.id] = { id: same?._id || null, ids: matches.slice(0, 20).map((it) => it._id), username, password, url: pageKey(url), t: Date.now() };
   await savePending();
   setTimeout(() => chrome.tabs.sendMessage(sender.tab.id, { type: 'pending' }, { frameId: 0 }).catch(() => {}), 700);
 }
@@ -262,18 +341,113 @@ function pendingFor(tabId) {
   return p;
 }
 
-async function confirmSave(tabId) {
+// Empreinte plutôt que le mot de passe lui-même : le refus est gardé aussi longtemps que l'onglet.
+async function refusalTag(domain, password) {
+  return b64(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(domain + '\0' + password))));
+}
+
+// « Plus tard » : ce mot de passe n'est plus proposé dans cet onglet, sur tout le domaine, et la page
+// reste silencieuse sauf soumission réelle d'un autre mot de passe (nouvel essai, pas une frappe en cours).
+async function dismissSave(tabId) {
+  const p = pending[tabId];
+  delete pending[tabId];
+  if (p?.url) {
+    const domain = baseDomain(hostOf(p.url));
+    const prev = refused[tabId]?.domain === domain ? refused[tabId].tags : [];
+    refused[tabId] = { domain, url: p.url, tags: [...prev, await refusalTag(domain, p.password)] };
+  }
+  await savePending();
+}
+
+async function isRefused(tabId, domain, url, password, weak) {
+  const r = refused[tabId];
+  if (r?.domain !== domain) return false;
+  return (weak && r.url === url) || r.tags.includes(await refusalTag(domain, password));
+}
+
+// `id` : compte existant (parmi ceux proposés) dont le mot de passe est remplacé ; sinon nouvelle entrée avec
+// `match` (domain | host | exact), l'adresse et l'identifiant, éventuellement corrigés, choisis dans le bandeau
+async function confirmSave(tabId, msg = {}) {
   const p = pendingFor(tabId);
   if (!p) throw new Error('Plus rien à enregistrer');
   let item;
-  if (p.kind === 'update' && vault.items.get(p.id)) {
-    item = withHistory(vault.items.get(p.id), { ...vault.items.get(p.id), password: p.password });
+  if (msg.id) {
+    const prev = (p.ids || []).includes(msg.id) && vault.items.get(msg.id);
+    if (!prev) throw new Error('Compte introuvable');
+    item = withHistory(prev, { ...prev, password: p.password });
   } else {
-    item = { type: 'login', name: p.name, username: p.username, password: p.password, uris: [p.origin] };
+    const match = ['host', 'exact'].includes(msg.match) ? msg.match : 'domain';
+    let uri = String(msg.uri ?? p.url ?? p.origin ?? '').trim();
+    const scheme = /^http:/i.test(p.url || p.origin || '') ? 'http://' : 'https://';
+    if (uri && !/^https?:\/\//i.test(uri)) uri = scheme + uri.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '');
+    if (!hostOf(uri)) throw new Error('Adresse invalide');
+    const username = typeof msg.username === 'string' ? msg.username.trim() : p.username;
+    item = { type: 'login', name: hostOf(uri).replace(/^www\./, ''), username, password: p.password, uris: [uri] };
+    if (match !== 'domain') item.match = match;
   }
   await withSession(() => vault.save([{ item }]));
   delete pending[tabId];
   await savePending();
+}
+
+// ------------------------------------------------------------------ clés d'accès (cf. page.js)
+// Demandes de la frame principale seulement ; rpId vérifié contre l'adresse de l'onglet et origine
+// (signée dans clientDataJSON) fournie par le navigateur, jamais par la page.
+
+const pkOrigin = (sender) => (sender.origin && sender.origin !== 'null' ? sender.origin : new URL(sender.url).origin);
+const pkAllowed = (msg, sender) => sender.frameId === 0 && rpIdAllowed(msg.rpId, sender.url);
+
+function passkeysFor(rpId) {
+  rpId = rpId.toLowerCase();
+  return vault.list().flatMap((it) => (it.passkeys || []).filter((pk) => pk.rpId?.toLowerCase() === rpId).map((pk) => ({ it, pk })));
+}
+
+function pkQuery(msg, sender) {
+  if (!vault.profile || !pkAllowed(msg, sender)) return { native: true };
+  if (!vault.unlocked) return { locked: true };
+  touch();
+  const keys = passkeysFor(msg.rpId);
+  if (msg.op === 'create') {
+    if (keys.some(({ pk }) => (msg.exclude || []).includes(pk.credentialId))) return { excluded: true };
+    return { entries: matchesFor(sender.url).map((it) => ({ id: it._id, name: it.name || hostOf(it.uris?.[0]), username: it.username || '' })) };
+  }
+  const allow = msg.allow || [];
+  const candidates = keys.filter(({ pk }) => !allow.length || allow.includes(pk.credentialId)).map(({ it, pk }) => ({
+    itemId: it._id, credentialId: pk.credentialId, name: it.name || pk.rpName || pk.rpId,
+    userName: pk.userName || pk.userDisplayName || it.username || '', icon: it.icon || '', tone: it.iconTone || '',
+  }));
+  return candidates.length ? { candidates } : { native: true };
+}
+
+async function pkCreate(msg, sender) {
+  if (!pkAllowed(msg, sender)) throw new Error('Site non autorisé');
+  if (!vault.unlocked) throw new Error('BioPass est verrouillé');
+  const rpId = msg.rpId.toLowerCase();
+  const origin = pkOrigin(sender);
+  const { passkey, response } = await createPasskey({ rpId, rpName: msg.rpName || '', user: msg.user, challenge: msg.challenge, origin });
+  const base = msg.target && vault.items.get(msg.target);
+  // même compte (rpId + identifiant utilisateur) : la nouvelle clé remplace l'ancienne
+  const item = base
+    ? { ...base, passkeys: [...(base.passkeys || []).filter((p) => !(p.rpId === rpId && p.userHandle === passkey.userHandle)), passkey] }
+    : { type: 'login', name: msg.rpName || hostOf(origin).replace(/^www\./, ''), username: msg.user.name || '', uris: [origin], passkeys: [passkey] };
+  await withSession(() => vault.save([{ item }]));
+  return response;
+}
+
+async function pkGet(msg, sender) {
+  if (!pkAllowed(msg, sender)) throw new Error('Site non autorisé');
+  if (!vault.unlocked) throw new Error('BioPass est verrouillé');
+  const it = vault.items.get(msg.itemId);
+  const pk = it?.passkeys?.find((p) => p.credentialId === msg.credentialId && p.rpId?.toLowerCase() === msg.rpId.toLowerCase());
+  if (!pk) throw new Error('Clé d\'accès introuvable');
+  touch();
+  const { counter, response } = await signPasskey(pk, { challenge: msg.challenge, origin: pkOrigin(sender) });
+  if (counter) { // compteur importé de Bitwarden : à faire progresser à chaque connexion
+    const item = { ...it, passkeys: it.passkeys.map((p) => (p === pk ? { ...p, counter } : p)) };
+    await withSession(() => vault.save([{ item }], { touch: false })).catch(() => {});
+  }
+  markUsed(sender.tab?.url || sender.url, it._id);
+  return response;
 }
 
 // ------------------------------------------------------------------ messages
@@ -330,15 +504,29 @@ async function handleContent(msg, sender) {
       return captured(msg, sender);
     case 'pending': {
       const p = sender.frameId === 0 && pendingFor(sender.tab.id);
-      return p ? { kind: p.kind, name: p.name, username: p.username } : null;
+      if (!p) return null;
+      // valeurs proposées pour chaque portée de correspondance (cf. matchesUrl) ; port conservé pour le lien
+      const u = p.url && new URL(p.url);
+      const host = u && u.hostname.replace(/^www\./, '');
+      const port = u?.port ? ':' + u.port : '';
+      const domain = u && baseDomain(host);
+      const sites = u ? { domain: domain + (domain === host ? port : ''), host: host + port, exact: p.url.replace(/^https?:\/\//, '') } : null;
+      const accounts = (p.ids || []).map((id) => vault.items.get(id)).filter(Boolean).map(summary);
+      const id = accounts.some((a) => a.id === p.id) ? p.id : null;
+      return { id, name: host || '', username: p.username, password: p.password, sites, accounts };
     }
+    case 'pkQuery':
+      return pkQuery(msg, sender);
+    case 'pkCreate':
+      return pkCreate(msg, sender);
+    case 'pkGet':
+      return pkGet(msg, sender);
     case 'generate':
       return generatePassword({ length: 20 });
     case 'confirmSave':
-      return confirmSave(sender.tab.id);
+      return confirmSave(sender.tab.id, msg);
     case 'dismissSave':
-      delete pending[sender.tab.id];
-      return savePending();
+      return dismissSave(sender.tab.id);
     case 'openPopup':
       return openPopup();
   }
@@ -387,6 +575,10 @@ async function handleExtension(msg) {
       const [tab] = w ? await chrome.tabs.query({ active: true, windowId: w.id }) : [];
       const page = tab ? { id: tab.id, url: tab.url || '' } : null;
       if (!vault.unlocked) return { status, tab: page };
+      // Service worker juste réveillé : liste tirée de l'instantané léger, sans attendre le coffre complet
+      // (les icônes manquantes suivent). La session serveur n'est pas encore reprise : pas « hors ligne ».
+      const partial = !settled || undefined;
+      if (partial) status.online = !!session.token;
       touch();
       const all = vault.list();
       const first = [...(page ? all.filter((it) => matchesUrl(it, page.url)) : []), ...search(all, '').slice(0, msg.first || 0)];
@@ -395,8 +587,9 @@ async function handleExtension(msg) {
         tab: page,
         list: all.map((it) => ({
           _id: it._id, name: it.name, username: it.username, uris: it.uris, folder: it.folder, fav: it.fav,
-          hasPw: !!it.password, totp: !!it.totp, kind: entryKind(it), iconTone: it.iconTone, iconLazy: it.icon ? 1 : undefined,
+          hasPw: !!it.password, totp: !!it.totp, kind: entryKind(it), iconTone: it.iconTone, iconLazy: it.icon || it._ic ? 1 : undefined,
         })),
+        partial,
         icons: Object.fromEntries(first.filter((it) => it.icon).map((it) => [it._id, it.icon])),
       };
     }
@@ -445,7 +638,7 @@ async function handleExtension(msg) {
       if (updateUrl) {
         try {
           const res = await fetch(updateUrl, { cache: 'no-store' });
-          latest = (await res.text()).match(/version='([\d.]+)'/)?.[1] || null;
+          latest = (await res.text()).match(/<updatecheck\b[^>]*\bversion='([\d.]+)'/)?.[1] || null; // pas l'en-tête <?xml version='1.0'?>
         } catch {}
       }
       const newer = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; };
@@ -465,9 +658,14 @@ async function handleExtension(msg) {
   throw new Error('Message inconnu');
 }
 
+// Messages des pages pour remplir : servis dès l'instantané léger chargé, sans attendre le coffre complet
+const QUICK = new Set(['state', 'focus', 'matches', 'creds']);
+
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   (async () => {
-    await ready;
+    // 'command' (popup, banc de mesure) : runCommand attend lui-même ce qu'il lui faut
+    const early = msg.type === 'command' || (msg.type === 'popup' && fromExtension(sender)) || (QUICK.has(msg.type) && sender.tab && !fromExtension(sender));
+    await (early ? quick : ready);
     return fromExtension(sender) ? handleExtension(msg) : sender.tab ? handleContent(msg, sender) : null;
   })().then((data) => reply({ data }), (e) => reply({ error: e.message || String(e), status: e.status }));
   return true;
@@ -478,7 +676,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 chrome.commands.onCommand.addListener((cmd, tab) => runCommand(cmd, tab));
 
 async function runCommand(cmd, tab) {
-  await ready;
+  await (cmd === 'autofill' ? quick : ready);
   tab ??= (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
   if (cmd === 'generate') {
     await clipboardWrite(generatePassword({ length: 20 }));
@@ -527,5 +725,6 @@ chrome.runtime.onUpdateAvailable.addListener(() => chrome.runtime.reload());
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   delete pending[tabId];
+  delete refused[tabId];
   delete lastUser[tabId];
 });

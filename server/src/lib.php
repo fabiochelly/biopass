@@ -35,7 +35,7 @@ function config(): array
         $defaults = [
             'data_dir' => dirname(__DIR__) . '/data',
             'registration_code' => '',
-            'token_ttl' => 7 * 86400,
+            'token_ttl' => 16 * 86400,
             'min_iterations' => 600000,
             'max_body' => 32 * 1024 * 1024,
             'login_max_failures' => 10,

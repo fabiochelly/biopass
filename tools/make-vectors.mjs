@@ -1,4 +1,4 @@
-// Génère tools/test-vectors.json à partir de core.js (référence pour Rust et Kotlin).
+// Génère tools/test-vectors.json à partir de core.js (référence pour Kotlin).
 import * as core from '../server/web/assets/core.js';
 import { writeFileSync } from 'node:fs';
 
@@ -13,12 +13,15 @@ const id = '0123456789abcdef0123456789abcdef';
 const item = { type: 'login', name: 'Exemple', username: 'fabio', password: 'p@ss', uris: ['https://example.com'], totp: '', notes: 'é', created: 1, updated: 2 };
 const enc = await core.encryptItem(vaultKey, id, item);
 const t = await core.totp('JBSWY3DPEHPK3PXP', 1700000000000);
+// clé d'accès créée par core.js (WebCrypto) : Kotlin doit savoir signer avec
+const pk = await core.createPasskey({ rpId: 'example.com', rpName: 'Exemple', user: { id: 'AQID', name: 'fabio' }, challenge: 'Y2hhbA', origin: 'https://example.com' });
 const t2 = await core.totp('otpauth://totp/x?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA&algorithm=SHA256&digits=8', 59000);
 writeFileSync(new URL('./test-vectors.json', import.meta.url), JSON.stringify({
   comment: 'Généré par make-vectors.mjs. wrapped/enc sont à DÉCHIFFRER (IV aléatoire), auth doit être identique.',
   password, salt, iter, auth, vaultKeyRawB64: core.b64(raw), wrapped, itemId: id, item, itemEnc: enc,
   totp: [{ secret: 'JBSWY3DPEHPK3PXP', timeMs: 1700000000000, code: t.code },
          { secret: 'otpauth://totp/x?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA&algorithm=SHA256&digits=8', timeMs: 59000, code: t2.code }],
+  passkey: { passkey: pk.passkey, publicKey: pk.response.publicKey },
   baseDomain: [['www.google.com', 'google.com'], ['accounts.google.co.uk', 'google.co.uk'], ['impots.gouv.fr', 'impots.gouv.fr'], ['192.168.1.1', '192.168.1.1'], ['localhost', 'localhost']]
     .map(([h, d]) => { if (core.baseDomain(h) !== d) throw new Error(h); return [h, d]; }),
 }, null, 2));

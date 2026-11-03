@@ -127,6 +127,7 @@
     <button data-act="sync" data-icon="sync">Synchroniser</button>
     <button data-act="icons" data-icon="globe">Récupérer les icônes des sites</button>
     <button data-act="noicons" data-icon="search">Entrées sans icône</button>
+    <button data-act="check" data-icon="shield">Vérifier les sites enregistrés</button>
     <button data-act="backups" data-icon="history">Sauvegardes</button>
     <button data-act="sends" data-icon="send">Partages envoyés</button>
     <button data-act="import" data-icon="upload">Importer depuis Bitwarden</button>
@@ -141,6 +142,7 @@
         <option value="60">1 h</option>
         <option value="240">4 h</option>
         <option value="4320">72 h</option>
+        <option value="21600">15 jours</option>
       </select>
     </label>
     <hr>
@@ -251,6 +253,18 @@
     <button type="button" class="btn ghost round" data-act="close" data-icon="x" title="Fermer"></button>
   </header>
   <div class="sheet-body" id="noicons-list"></div>
+</dialog>
+
+<dialog id="dlg-check" class="sheet xwide">
+  <header class="sheet-head">
+    <h2>Vérification des sites</h2>
+    <button type="button" class="btn ghost round" data-act="close" data-icon="x" title="Fermer"></button>
+  </header>
+  <div class="sheet-body backups" id="ck-body"></div>
+  <footer class="sheet-foot ck-foot" id="ck-foot" hidden>
+    <button type="button" class="btn" data-act="recheck" data-icon="sync">Revérifier la liste</button>
+    <button type="button" class="btn danger" data-act="delete" data-icon="trash" disabled>Supprimer la sélection</button>
+  </footer>
 </dialog>
 
 <dialog id="dlg-sends" class="sheet wide">

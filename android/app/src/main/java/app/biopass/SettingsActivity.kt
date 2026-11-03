@@ -14,6 +14,28 @@ import android.widget.Switch
 import android.widget.TextView
 
 class SettingsActivity : BaseActivity() {
+    @androidx.annotation.RequiresApi(34)
+    private fun passkeysCard(): android.view.View {
+        val c = card()
+        c.addView(label("Clés d'accès (passkeys)"))
+        val cm = getSystemService(android.credentials.CredentialManager::class.java)
+        val on = cm?.isEnabledCredentialProviderService(android.content.ComponentName(this, app.biopass.passkey.PasskeyService::class.java)) == true
+        c.addView(text(if (on) "BioPass fournit vos clés d'accès et mots de passe aux applis et aux navigateurs, avec votre empreinte."
+            else "Activez BioPass pour vous connecter avec vos clés d'accès (et vos mots de passe) dans les applis et les navigateurs.", 15f), lp(top = dp(4)))
+        if (!on) {
+            c.addView(button("Activer BioPass", BtnStyle.PRIMARY, R.drawable.ic_key) {
+                try {
+                    androidx.credentials.CredentialManager.create(this).createSettingsPendingIntent().send()
+                } catch (e: Exception) {
+                    toast("Ouvrez Paramètres → Mots de passe, clés d'accès et comptes")
+                }
+            }, lp(top = dp(12)))
+        }
+        c.addView(text("Choisissez BioPass comme « Service préféré » dans Mots de passe, clés d'accès et comptes. Chrome et Brave : réglage « Saisie automatique via un autre service ».",
+            13f, col(R.color.bp_text2)), lp(top = dp(10), bottom = dp(6)))
+        return c
+    }
+
     override val needsUnlock = false
 
     override fun onResume() {
@@ -61,6 +83,9 @@ class SettingsActivity : BaseActivity() {
         af.addView(text("Chrome et Brave : dans leurs paramètres, section « Saisie automatique », choisissez « Saisie automatique via un autre service ».",
             13f, col(R.color.bp_text2)), lp(top = dp(10), bottom = dp(6)))
         body.addView(af)
+
+        // Clés d'accès (fournisseur d'identifiants, Android 14+)
+        if (android.os.Build.VERSION.SDK_INT >= 34) body.addView(passkeysCard())
 
         // Empreinte
         if (Bio.available() || Bio.enabled) {

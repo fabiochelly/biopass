@@ -81,6 +81,19 @@ class DetailActivity : BaseActivity() {
             }
             body.addView(c)
         }
+        if (it.passkeys.isNotEmpty()) {
+            // la clé privée n'est jamais affichée : seulement le compte et le site
+            val c = card()
+            c.addView(label("Clés d'accès"), lp(bottom = dp(4)))
+            for (pk in it.passkeys) {
+                val who = pk.userName.ifEmpty { pk.userDisplayName }
+                c.addView(text(if (who.isNotEmpty()) "$who · ${pk.rpId}" else pk.rpId, 15f).apply {
+                    isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END
+                }, lp(top = dp(2)))
+                if (pk.created > 0) c.addView(text("Créée le " + DateFormat.getMediumDateFormat(this).format(Date(pk.created)), 12f, col(R.color.bp_text2)), lp(bottom = dp(4)))
+            }
+            body.addView(c)
+        }
         for (f in it.fields) body.addView(fieldCard(f.name.ifBlank { "Champ" }, f.value, hidden = f.hidden))
         if (it.notes.isNotBlank()) body.addView(fieldCard("Notes", it.notes, multiline = true))
         val updated = it.data.optLong("updated", 0)

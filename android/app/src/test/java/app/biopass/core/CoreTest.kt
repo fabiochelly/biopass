@@ -106,6 +106,15 @@ class CoreTest {
         assertTrue(Domains.matchesWebDomain(it, "www.github.com"))
         assertTrue(Domains.matchesApp(it, "com.github.android"))
         assertFalse(Domains.matchesApp(it, "com.github"))
+        val host = Item("h", 1, JSONObject().put("uris", org.json.JSONArray(listOf("https://accounts.google.com"))).put("match", "host"))
+        assertTrue(Domains.matchesWebDomain(host, "accounts.google.com"))
+        assertTrue(Domains.matchesWebDomain(host, "eu.accounts.google.com"))
+        assertFalse(Domains.matchesWebDomain(host, "mail.google.com"))
+        val exact = Item("e", 1, JSONObject().put("uris", org.json.JSONArray(listOf("https://accounts.google.com/signin/"))).put("match", "exact"))
+        assertTrue(Domains.matchesUrl(exact, "https://Accounts.google.com/signin?x=1#y"))
+        assertFalse(Domains.matchesUrl(exact, "https://accounts.google.com/signout"))
+        assertTrue(Domains.matchesWebDomain(exact, "accounts.google.com"))
+        assertFalse(Domains.matchesWebDomain(exact, "eu.accounts.google.com"))
     }
 
     @Test fun rechercheEtGenerateur() {

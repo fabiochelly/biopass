@@ -1,6 +1,6 @@
 # BioPass — protocole (v1)
 
-Référence commune pour le serveur PHP, l'app web, l'app Rust et l'extension.
+Référence commune pour le serveur PHP, l'app web, l'app Android et l'extension.
 **Le serveur ne voit jamais de donnée en clair** : il stocke des blobs chiffrés
 et un hash de la clé d'authentification. Tout (dé)chiffrement est côté client.
 
@@ -39,12 +39,21 @@ ne sont pas rechiffrées (la `vaultKey` ne change pas).
   "username": "fabio",
   "password": "…",
   "uris": ["https://github.com/login"],
+  "match": "host",            // portée de la correspondance des uris : "domain" (défaut si absent) | "host" | "exact"
   "totp": "otpauth://totp/…  ou secret base32",
   "notes": "",
   "folder": "Dev",
   "fav": false,
   "fields": [{"name": "PIN", "value": "1234", "hidden": true}],
   "history": [{"password": "ancien", "date": 1729000000000}],  // 10 derniers, le plus récent d'abord
+  "passkeys": [{              // clés d'accès WebAuthn (voir plus bas)
+    "credentialId": "…",      // base64url
+    "rpId": "boursobank.com", "rpName": "BoursoBank",
+    "userHandle": "…",        // base64url (user.id du site)
+    "userName": "fabio", "userDisplayName": "Fabio",
+    "key": "…",               // clé privée ECDSA P-256, PKCS#8 DER en base64url
+    "counter": 0, "created": 1730000000000
+  }],
   "created": 1730000000000,   // ms epoch
   "updated": 1730000000000
 }
@@ -59,6 +68,27 @@ Une entrée correspond à une page si le *domaine de base* d'une de ses `uris`
 est égal à celui de la page. Domaine de base = 2 derniers labels du nom d'hôte,
 ou 3 si les 2 derniers sont un suffixe connu (`co.uk`, `com.au`, `gouv.fr`…).
 Les IP sont comparées telles quelles. Une URI sans schéma est préfixée par `https://`.
+
+Le champ `match` de l'entrée restreint cette règle (choisi dans le bandeau d'enregistrement de l'extension) :
+- `"domain"` ou absent : la règle ci-dessus (même domaine de base) ;
+- `"host"` : le nom d'hôte de la page est celui de l'URI ou l'un de ses sous-domaines ;
+- `"exact"` : même adresse, comparée sans paramètres (`?…`), ancre (`#…`) ni `/` final, sans tenir compte de la casse.
+  Si l'adresse complète n'est pas connue (saisie automatique Android : domaine seul), le nom d'hôte doit être identique.
+
+### Clés d'accès (passkeys)
+
+Authentificateur logiciel de l'extension (`createPasskey` / `signPasskey` dans core.js) et de
+l'appli Android (`WebAuthn` dans core/Passkeys.kt ; UV seulement si l'utilisateur a été vérifié) :
+ES256 uniquement, attestation `none`, AAGUID `b10b1a55-b10b-4a55-b10b-1a55b10b4a55`, drapeaux
+UP + UV + BE + BS (clé synchronisée). Compteur : 0 reste 0 ; une valeur non nulle (clé importée)
+est incrémentée et enregistrée à chaque connexion. Une demande n'est servie que pour la frame
+principale, si le `rpId` est l'hôte de la page ou un domaine parent (pas au-dessus du domaine de base),
+en HTTPS ou sur `localhost`. L'origine signée vient du navigateur, jamais de la page.
+Sur Android, l'appelant est un navigateur reconnu (origine de la page) ou une appli déclarée par le
+site dans ses Digital Asset Links (origine `android:apk-key-hash:<SHA-256 du certificat>`).
+
+Import Bitwarden : `fido2Credentials` (ECDSA P-256) → `passkeys` ; `credentialId` GUID → ses 16 octets,
+`b64.<…>` → tel quel.
 
 ## 2. API HTTP
 
@@ -92,7 +122,7 @@ souvent filtré par Apache/FPM). Erreur : code HTTP ≠ 2xx et `{"error": "messa
   recrée avec le même `id`, ce que fait la restauration d'une sauvegarde). Si une seule `prev` ne correspond pas,
   rien n'est appliqué (atomique) → 409. Le client doit resynchroniser.
   Après un `save`, le client fait un `sync` pour mettre à jour son cache.
-- Token : valable 7 jours (configurable). 401 → refaire `login`.
+- Token : valable 16 jours (configurable), de quoi couvrir le verrouillage le plus long proposé (15 jours). 401 → refaire `login`.
 - `login`/`register` limités par IP (10 échecs / 15 min → 429).
 
 ## 3. Flux client
@@ -104,6 +134,10 @@ souvent filtré par Apache/FPM). Erreur : code HTTP ≠ 2xx et `{"error": "messa
 4. `sync(since=rev locale)`, mettre à jour le cache chiffré, déchiffrer en mémoire.
 
 Le cache local ne contient **que** des données chiffrées + salt/iter/wrapped.
+L'extension y ajoute un instantané des entrées sans leurs icônes (sauf une quarantaine : premières lignes
+du popup, dernières entrées remplies), chiffré d'un bloc avec `vaultKey` (AAD `biopass/item/lite`) : au
+réveil du service worker, les comptes d'un site et la liste du popup sont disponibles sans relire ni
+déchiffrer tout le cache. Il n'est utilisé que s'il date de la dernière écriture du cache.
 Hors-ligne = lecture seule. Le serveur est la source de vérité.
 
 ## 4. Stockage serveur (dossier `data/`)
@@ -117,6 +151,7 @@ data/users/<user>.php            {user, salt, iter, auth(hash), wrapped, gen, cr
 data/vaults/<user>.php           {rev, items:{<id>:{rev, enc, del}}}
 data/locks/<nom>.php             verrous flock (garde seule)
 data/backups/<user>/<date>.php   instantané quotidien {user, vault} (30 jours)
+data/cache/rdap.php              annuaire public des serveurs RDAP de l'IANA (vérification des sites, 7 jours)
 data/ratelimit/<sha256(ip)>.php
 ```
 

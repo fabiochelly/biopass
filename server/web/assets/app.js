@@ -322,6 +322,7 @@ function lock() {
   for (const d of document.querySelectorAll('dialog[open]')) d.close();
   state.results = [];
   state.selected = null;
+  resetCheck();
   showAuth('unlock');
 }
 
@@ -350,6 +351,8 @@ async function doSync(manual = false) {
     if (manual) toast(vault.online ? (changed ? 'Données mises à jour' : 'Déjà à jour') : 'Serveur injoignable', 1800, vault.online);
   } catch (e) {
     if (e.status === 401) {
+      // session trop ancienne mais coffre toujours ouvert : nouvelle session, sans redemander le mot de passe
+      if (await vault.relogin().catch(() => false)) return doSync(manual);
       toast('Session expirée', 2000, false);
       return lock();
     }
@@ -408,7 +411,7 @@ function row(it) {
   const stop = (fn) => (e) => { e.stopPropagation(); fn(e); };
   const li = h('li', {
     'data-id': it._id,
-    onclick: () => { state.cursor = +li.dataset.idx; showDetail(it._id); },
+    onclick: () => { setCursor(+li.dataset.idx, false); showDetail(it._id); },
   },
   avatar(name, it.icon, it),
   h('div', { class: 'meta' },
@@ -420,13 +423,20 @@ function row(it) {
   return li;
 }
 
+// Le curseur est toujours tenu à jour (Entrée ouvre sa ligne), mais `.kbd` ne le montre que s'il sert :
+// aux flèches ou pendant une recherche. Sinon il ferait passer une ligne pour l'entrée sélectionnée.
+function setCursor(i, shown) {
+  state.cursor = i;
+  const list = $('#list');
+  list.classList.toggle('kbd', shown);
+  for (const li of list.children) li.classList.remove('cursor');
+  list.children[i]?.classList.add('cursor');
+}
+
 function moveCursor(delta) {
   if (!state.results.length) return;
-  state.cursor = Math.max(0, Math.min(state.results.length - 1, state.cursor + delta));
-  const lis = $('#list').children;
-  for (const li of lis) li.classList.remove('cursor');
-  lis[state.cursor]?.classList.add('cursor');
-  lis[state.cursor]?.scrollIntoView({ block: 'nearest' });
+  setCursor(Math.max(0, Math.min(state.results.length - 1, state.cursor + delta)), true);
+  $('#list').children[state.cursor]?.scrollIntoView({ block: 'nearest' });
 }
 
 // ------------------------------------------------------------------ détail
@@ -453,6 +463,15 @@ function fieldRow(label, value, { secret = false, mono = false, link = false, no
   const cp = iconBtn('copy', 'Copier', () => copy(value, copyLabel || label, cp));
   acts.append(cp);
   return h('div', { class: 'row' }, h('div', { class: 'body' }, h('div', { class: 'k' }, label), v), acts);
+}
+
+// Clé d'accès (passkey) : utilisée par l'extension ; ici seulement montrée (la clé privée ne s'affiche pas)
+function passkeyRow(pk) {
+  const who = pk.userName || pk.userDisplayName || '';
+  return h('div', { class: 'row' }, h('div', { class: 'body' },
+    h('div', { class: 'k' }, 'Clé d\'accès'),
+    h('div', { class: 'v' }, who ? `${who} · ${pk.rpId}` : pk.rpId),
+    pk.created ? h('div', { class: 'k' }, `Créée le ${fmtDate(pk.created)}`) : null));
 }
 
 function totpRow(secret) {
@@ -522,6 +541,7 @@ function showDetail(id, push = true, refresh = false) {
         h('button', { class: 'btn primary', disabled: !vault.online, onclick: () => openEditor(it) }, icon('edit'), h('span', { class: 'label' }, 'Modifier')))),
     card(fieldRow('Identifiant', it.username), fieldRow('Mot de passe', it.password, { secret: true }), it.totp && totpRow(it.totp)),
     card((it.uris || []).map((u, i) => fieldRow(i ? `Site ${i + 1}` : 'Site', u, { link: true, copyLabel: 'Adresse' }))),
+    card((it.passkeys || []).map(passkeyRow)),
     card((it.fields || []).map((f) => fieldRow(f.name || 'Champ', String(f.value ?? ''), { secret: f.hidden }))),
     card(fieldRow('Notes', it.notes, { notes: true })),
     historyCard(it.history),
@@ -672,7 +692,7 @@ $('#btn-menu').onclick = () => {
   $('#menu-avatar').replaceChildren(initial(vault.profile.user));
   $('#menu-avatar').style.background = avatarColor(vault.profile.user);
   $('#lock-delay').value = String(prefs.lock);
-  for (const b of $('#dlg-menu').querySelectorAll('[data-act=import],[data-act=password],[data-act=revoke],[data-act=icons],[data-act=backups],[data-act=sends]')) b.disabled = !vault.online;
+  for (const b of $('#dlg-menu').querySelectorAll('[data-act=import],[data-act=password],[data-act=revoke],[data-act=icons],[data-act=backups],[data-act=sends],[data-act=check]')) b.disabled = !vault.online;
   $('#dlg-menu').showModal();
 };
 $('#lock-delay').onchange = (e) => { prefs.lock = +e.target.value; savePrefs(); };
@@ -688,6 +708,7 @@ $('#dlg-menu').addEventListener('click', async (e) => {
     case 'backups': close(); return openBackups();
     case 'sends': close(); return openSends();
     case 'noicons': close(); return openNoIcons();
+    case 'check': close(); return openCheck();
     case 'sync': close(); return doSync(true);
     case 'lock': close(); return lock();
     case 'import': return $('#import-file').click();
@@ -737,16 +758,25 @@ $('#import-file').onchange = async (e) => {
     return toast(ex.message, 4000, false);
   }
   const key = (it) => [it.name, it.username, it.password, it.uris?.[0] || ''].join('\u0000');
-  const existing = new Set(vault.list().map(key));
+  const existing = new Map(vault.list().map((it) => [key(it), it]));
   const fresh = items.filter((it) => !existing.has(key(it)));
-  if (!fresh.length) return toast('Rien de nouveau à importer', 2000, false);
-  if (!confirm(`Importer ${plural(fresh.length, 'entrée')} ? (${plural(items.length - fresh.length, 'doublon')} ignoré(s))`)) return;
+  // entrées déjà importées sans leurs clés d'accès (versions précédentes) : on les complète
+  const keyed = items.filter((it) => it.passkeys && existing.has(key(it))).map((it) => {
+    const old = existing.get(key(it));
+    const have = new Set((old.passkeys || []).map((p) => p.credentialId));
+    const add = it.passkeys.filter((p) => !have.has(p.credentialId));
+    return add.length && { ...old, passkeys: [...(old.passkeys || []), ...add], fields: (old.fields || []).filter((f) => !(f.name === 'Passkey' && /non importée/.test(f.value))) };
+  }).filter(Boolean);
+  if (!fresh.length && !keyed.length) return toast('Rien de nouveau à importer', 2000, false);
+  const what = [fresh.length && `importer ${plural(fresh.length, 'entrée')}`, keyed.length && `compléter ${plural(keyed.length, 'entrée')} déjà présente(s) avec leurs clés d'accès`].filter(Boolean).join(' et ');
+  if (!confirm(`${what[0].toUpperCase() + what.slice(1)} ? (${plural(items.length - fresh.length, 'doublon')} ignoré(s))`)) return;
   try {
-    for (let i = 0; i < fresh.length; i += 500) {
-      toast(`Import… ${i}/${fresh.length}`, 60000, false);
-      await vault.save(fresh.slice(i, i + 500).map((item) => ({ item })));
+    const changes = [...fresh, ...keyed];
+    for (let i = 0; i < changes.length; i += 500) {
+      toast(`Import… ${i}/${changes.length}`, 60000, false);
+      await vault.save(changes.slice(i, i + 500).map((item) => ({ item })));
     }
-    toast(`${plural(fresh.length, 'entrée')} importée(s). Supprimez le fichier d'export !`, 5000);
+    toast(`${plural(changes.length, 'entrée')} importée(s) ou complétée(s). Supprimez le fichier d'export !`, 5000);
     setTimeout(() => scheduleIcons({ limit: 60 }), 6000);
   } catch (ex) {
     toast('Import interrompu : ' + ex.message, 5000, false);
@@ -1079,6 +1109,212 @@ $('#dlg-noicons').addEventListener('click', (e) => { if (e.target.closest('[data
 
 $('#dlg-sends').addEventListener('click', (e) => { if (e.target.closest('[data-act=close]')) $('#dlg-sends').close(); });
 
+// ------------------------------------------------------------------ vérification des sites enregistrés
+// Le serveur visite chaque adresse web enregistrée (il la reçoit donc en clair, sans rien conserver) et dit
+// si le site existe encore. Une entrée est valide dès qu'une de ses adresses répond.
+
+const CHECK_PARALLEL = 8;
+const CHECK_RANK = ['ok', 'moved', 'error', 'notfound', 'down', 'nohost', 'nodomain']; // du meilleur au pire
+const CHECK_GROUPS = [
+  ['nodomain', 'Domaine inexistant', 'Le nom de domaine n\'est plus enregistré ou n\'a plus de serveur DNS : le service a très probablement disparu.'],
+  ['nohost', 'Adresse introuvable', 'Le domaine existe toujours, mais plus ce nom de site (sous-domaine supprimé, ou domaine sans site web).'],
+  ['down', 'Site injoignable', 'Le nom existe mais le serveur ne répond pas. Peut-être passager : revérifiez plus tard avant de supprimer.'],
+  ['notfound', 'Page introuvable', 'La page enregistrée n\'existe plus. Si le site lui-même répond, mettez plutôt l\'adresse à jour.'],
+  ['error', 'Erreur du site', 'Le site répond par une erreur, souvent passagère pour les erreurs 5xx.'],
+  ['moved', 'Redirige vers un autre site', 'Changement de nom, rachat, ou domaine expiré repris par un tiers : vérifiez la destination.'],
+];
+const CHECK_BADGES = { ok: 'OK', moved: 'Redirigé', error: 'Erreur', notfound: 'Introuvable', down: 'Injoignable', nohost: 'Nom inconnu', nodomain: 'Domaine inexistant', skip: 'Non vérifié' };
+const CHECK_TONES = { ok: 'added', moved: 'changed', error: 'changed', notfound: 'changed', down: 'removed', nohost: 'removed', nodomain: 'removed' };
+
+// Dernière analyse : résultats par adresse, en mémoire seulement (effacés au verrouillage)
+const ck = { results: new Map(), running: false, done: 0, total: 0, at: 0, error: '', filter: 'all', selected: new Set() };
+
+function resetCheck() {
+  Object.assign(ck, { results: new Map(), running: false, done: 0, total: 0, at: 0, error: '', filter: 'all', selected: new Set() });
+}
+
+// Adresses web vérifiables d'une entrée : ni application, ni SSH, ni adresse IP ou nom de réseau local.
+function checkUrls(it) {
+  const out = new Set();
+  for (let u of it.uris || []) {
+    u = u.trim();
+    if (/^[a-z][a-z0-9+.-]*:/i.test(u) && !/^https?:/i.test(u)) continue;
+    const host = hostOf(u);
+    if (!host.includes('.') || /^[\d.]+$/.test(host) || host.startsWith('[') || /\.(local|lan|home|internal|localdomain)$/.test(host)) continue;
+    out.add(/^https?:/i.test(u) ? u : 'https://' + u);
+  }
+  return [...out];
+}
+
+// État d'une entrée : celui de sa meilleure adresse ; 'skip' si aucune n'est vérifiable, null si pas encore vérifiée.
+function entryCheck(it) {
+  const urls = checkUrls(it).map((url) => ({ url, r: ck.results.get(url) }));
+  const known = urls.map((x) => x.r?.status).filter((st) => st && st !== 'skip');
+  const status = known.length ? known.sort((a, b) => CHECK_RANK.indexOf(a) - CHECK_RANK.indexOf(b))[0] : urls.length && urls.every((x) => x.r) ? 'skip' : null;
+  return { it, urls, status };
+}
+
+const checkProblems = () => vault.list().map(entryCheck).filter((x) => CHECK_GROUPS.some(([key]) => key === x.status));
+
+async function checkOne(url) {
+  try {
+    return await vault.api.call('check', { url });
+  } catch (e) {
+    if (e.status !== 401 || !(await vault.relogin().catch(() => false))) throw e;
+    saveSession(); // session expirée pendant l'analyse : renouvelée sans redemander le mot de passe
+    return vault.api.call('check', { url });
+  }
+}
+
+// Analyse de tout le coffre, ou seulement des entrées `ids` (« Revérifier la liste »).
+async function runCheck(ids = null) {
+  if (ck.running) return;
+  if (!vault.api.token) return toast('Hors ligne : vérification impossible', 2500, false);
+  const items = ids ? ids.map((id) => vault.items.get(id)).filter(Boolean) : vault.list();
+  const queue = [...new Set(items.flatMap(checkUrls))];
+  if (ids) for (const url of queue) ck.results.delete(url);
+  else Object.assign(ck, { results: new Map(), selected: new Set(), filter: 'all' });
+  Object.assign(ck, { running: true, done: 0, total: queue.length, error: '', at: Date.now() });
+  renderCheck();
+  const results = ck.results; // remplacé au verrouillage : les réponses tardives sont alors ignorées
+  let fatal = null;
+  const worker = async () => {
+    while (queue.length && ck.running && !fatal) {
+      const url = queue.shift();
+      let r;
+      try {
+        r = await checkOne(url);
+      } catch (e) {
+        if ([0, 401, 501].includes(e.status)) { fatal = e; break; } // hors ligne, session perdue, curl absent
+        r = { url, status: 'skip', detail: 'Vérification impossible : ' + e.message };
+      }
+      if (ck.results !== results) return;
+      results.set(url, r);
+      ck.done++;
+      renderCheckProgress();
+    }
+  };
+  await Promise.all(Array.from({ length: CHECK_PARALLEL }, worker));
+  if (ck.results !== results) return;
+  if (fatal) ck.error = fatal.message;
+  else if (!ck.running) ck.error = 'analyse arrêtée';
+  ck.running = false;
+  renderCheck();
+  if (!$('#dlg-check').open) {
+    const n = checkProblems().length;
+    toast(`Vérification des sites terminée : ${plural(n, 'entrée')} à revoir`, 4000, !n);
+  }
+}
+
+function renderCheckProgress() {
+  const bar = $('#ck-bar');
+  if (!bar) return;
+  bar.style.width = `${ck.total ? (100 * ck.done) / ck.total : 100}%`;
+  $('#ck-count').textContent = `${ck.done} / ${ck.total}`;
+}
+
+function renderCheckFoot() {
+  const n = [...ck.selected].filter((id) => vault.items.has(id)).length;
+  const del = $('#ck-foot [data-act=delete]');
+  del.disabled = !n;
+  del.replaceChildren(icon('trash'), n ? `Supprimer ${plural(n, 'entrée')}` : 'Supprimer la sélection');
+}
+
+function renderCheck() {
+  const body = $('#ck-body');
+  const foot = $('#ck-foot');
+  foot.hidden = ck.running || !ck.at;
+  if (ck.running) {
+    body.replaceChildren(
+      h('p', { class: 'hint' }, `Vérification de ${plural(ck.total, 'adresse')}, ${CHECK_PARALLEL} à la fois…`),
+      h('div', { class: 'ck-progress' }, h('i', { id: 'ck-bar' })),
+      h('div', { class: 'ck-running' }, h('span', { id: 'ck-count' }), h('button', { type: 'button', class: 'btn small', onclick: () => { ck.running = false; } }, 'Arrêter')));
+    return renderCheckProgress();
+  }
+  if (!ck.at) {
+    return body.replaceChildren(
+      h('p', {}, 'BioPass visite chaque site enregistré dans vos entrées et liste celles dont le site n\'existe plus, ne répond plus ou renvoie une erreur. Vous choisissez ensuite celles à supprimer.'),
+      h('p', { class: 'hint' }, 'Les adresses des sites sont envoyées à votre serveur BioPass, qui les visite sans rien conserver (jamais vos identifiants ni vos mots de passe). Pour un site qui ne répond pas du tout, il vérifie aussi si le nom de domaine existe encore (DNS, puis registre du domaine).'),
+      h('button', { type: 'button', class: 'btn primary', onclick: () => runCheck() }, icon('shield'), 'Lancer l\'analyse'));
+  }
+  const entries = vault.list().map(entryCheck).filter((e) => e.status);
+  const byGroup = new Map();
+  for (const e of entries) byGroup.set(e.status, [...(byGroup.get(e.status) || []), e]);
+  const groups = CHECK_GROUPS.filter(([key]) => byGroup.has(key));
+  const listed = groups.reduce((n, [key]) => n + byGroup.get(key).length, 0);
+  for (const id of ck.selected) if (!vault.items.has(id)) ck.selected.delete(id);
+  if (ck.filter !== 'all' && !byGroup.has(ck.filter)) ck.filter = 'all';
+
+  const ok = byGroup.get('ok')?.length || 0;
+  const skip = byGroup.get('skip')?.length || 0;
+  const parts = [h('p', { class: 'hint' },
+    `Analyse du ${fmtDate(ck.at)} : ${plural(entries.length, 'entrée')} avec un site, ${ok} OK, ${listed} à revoir`,
+    skip ? `, ${skip} non vérifiable${skip > 1 ? 's' : ''} (port, réseau local)` : '', '. ',
+    ck.error ? h('b', {}, `Analyse incomplète (${ck.error}). `) : '',
+    h('button', { type: 'button', class: 'link', onclick: () => runCheck() }, 'Relancer l\'analyse'))];
+  if (groups.length > 1) {
+    parts.push(h('div', { class: 'bk-summary' }, [['all', 'Tout', listed], ...groups.map(([key, title]) => [key, title, byGroup.get(key).length])].map(([key, label, n]) =>
+      h('button', { type: 'button', class: 'bk-chip' + (ck.filter === key ? ' on' : ''), onclick: () => { ck.filter = key; renderCheck(); } }, label, h('b', {}, n)))));
+  }
+  if (!listed) parts.push(h('div', { class: 'bk-empty' }, 'Tous les sites vérifiés répondent. 🎉'));
+  for (const [key, title, advice] of groups) {
+    if (ck.filter !== 'all' && ck.filter !== key) continue;
+    const list = byGroup.get(key).sort((a, b) => (a.it.name || '').localeCompare(b.it.name || ''));
+    const all = list.every((e) => ck.selected.has(e.it._id));
+    parts.push(
+      h('div', { class: 'group-title ck-group' }, `${title} (${list.length})`,
+        h('button', { type: 'button', class: 'link', onclick: () => { for (const e of list) all ? ck.selected.delete(e.it._id) : ck.selected.add(e.it._id); renderCheck(); } }, all ? 'Tout décocher' : 'Tout cocher')),
+      h('p', { class: 'hint' }, advice),
+      ...list.map(ckCard));
+  }
+  body.replaceChildren(...parts);
+  $('#ck-foot [data-act=recheck]').disabled = !listed;
+  renderCheckFoot();
+}
+
+function ckCard({ it, urls }) {
+  const name = it.name || '(sans nom)';
+  const box = h('input', { type: 'checkbox', checked: ck.selected.has(it._id), onchange: (e) => { e.target.checked ? ck.selected.add(it._id) : ck.selected.delete(it._id); renderCheckFoot(); } });
+  return h('div', { class: 'bk-card' },
+    h('div', { class: 'bk-head' },
+      h('label', { class: 'ck-pick' }, box, avatar(name, it.icon, it), h('div', { class: 't' }, h('b', {}, name), h('small', {}, it.username || it.folder || ''))),
+      iconBtn('edit', 'Modifier l\'entrée', () => openEditor(it), 'btn ghost round')),
+    h('div', { class: 'ck-urls' }, urls.map(({ url, r }) => h('div', { class: 'ck-url' },
+      h('span', { class: 'bk-badge ' + (CHECK_TONES[r?.status] || 'muted') }, r?.code && ['error', 'notfound'].includes(r.status) ? `Erreur ${r.code}` : CHECK_BADGES[r?.status] || 'Non vérifié'),
+      h('div', { class: 't' }, h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, url), h('small', {}, r?.detail || 'Pas encore vérifiée'))))));
+}
+
+async function deleteChecked() {
+  const ids = [...ck.selected].filter((id) => vault.items.has(id));
+  if (!ids.length) return;
+  if (!confirm(`Supprimer ${plural(ids.length, 'entrée')} ?\n\nUne copie reste disponible pendant 30 jours dans « Sauvegardes ».`)) return;
+  try {
+    for (let i = 0; i < ids.length; i += 500) await vault.save(ids.slice(i, i + 500).map((id) => ({ id, del: true })));
+    toast(`${plural(ids.length, 'entrée')} supprimée(s)`);
+    ck.selected.clear();
+  } catch (e) {
+    toast(e.message, 3000, false);
+  }
+  if (state.selected && !vault.items.has(state.selected)) closeDetail();
+  renderList();
+  renderStatus();
+  renderCheck();
+}
+
+function openCheck() {
+  renderCheck();
+  $('#dlg-check').showModal();
+}
+
+$('#dlg-check').addEventListener('click', (e) => {
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  if (act === 'close') $('#dlg-check').close();
+  else if (act === 'delete') deleteChecked();
+  else if (act === 'recheck') runCheck(checkProblems().map((x) => x.it._id));
+});
+// entrée corrigée depuis le rapport : le rapport reflète la nouvelle version
+$('#dlg-edit').addEventListener('close', () => { if ($('#dlg-check').open && !ck.running) renderCheck(); });
+
 // ------------------------------------------------------------------ applications à télécharger
 
 function serverAddress() {
@@ -1185,6 +1421,7 @@ $('#pass-form').onsubmit = async (e) => {
 // explicite (clic, Entrée).
 $('#q').oninput = () => {
   state.cursor = 0;
+  $('#list').classList.toggle('kbd', !!$('#q').value); // Entrée ouvrira cette première ligne : la montrer
   renderList();
 };
 $('#q').onkeydown = (e) => {

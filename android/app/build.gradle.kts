@@ -18,8 +18,8 @@ android {
         applicationId = "app.biopass"
         minSdk = 28
         targetSdk = 35
-        versionCode = 10
-        versionName = "1.3.6"
+        versionCode = 11
+        versionName = "1.3.7"
         // FLAG_SECURE (captures d'écran bloquées). « -PnoSecure » : uniquement pour les captures de test.
         resValue("bool", "bp_secure", if (project.hasProperty("noSecure")) "false" else "true")
     }
@@ -67,8 +67,11 @@ android {
 }
 
 dependencies {
-    // Seule dépendance : InlineSuggestionUi (suggestions dans la barre du clavier, Android 11+).
+    // InlineSuggestionUi (suggestions dans la barre du clavier, Android 11+).
     implementation("androidx.autofill:autofill:1.1.0")
+    // Fournisseur d'identifiants Android 14+ (passkeys, mots de passe) : entrées du sélecteur système,
+    // origine des navigateurs autorisés. Le format des entrées est propre à cette bibliothèque.
+    implementation("androidx.credentials:credentials:1.3.0")
     testImplementation("junit:junit:4.13.2")
     // org.json est fourni par Android ; sur la JVM de test il faut une vraie implémentation.
     testImplementation("org.json:json:20240303")

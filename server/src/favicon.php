@@ -13,19 +13,25 @@ const ICON_SITE_BUDGET = 15; // secondes passées au plus sur le site lui-même
 const ICON_DDG_DEFAULT = 'ab1fb25b83d4b333ea661a84bd298b2e'; // icône « globe » générique de DuckDuckGo
 const ICON_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
 
+// Toutes les adresses IP d'un nom (IPv4 et IPv6), ou l'adresse elle-même.
+function host_ips(string $host): array
+{
+    if (filter_var($host, FILTER_VALIDATE_IP)) {
+        return [$host];
+    }
+    $ips = gethostbynamel($host) ?: [];
+    foreach (@dns_get_record($host, DNS_AAAA) ?: [] as $r) {
+        if (!empty($r['ipv6'])) {
+            $ips[] = $r['ipv6'];
+        }
+    }
+    return $ips;
+}
+
 // Adresse IP publique uniquement : le relais ne doit pas permettre de sonder le réseau du serveur (SSRF).
 function public_ips(string $host): array
 {
-    if (filter_var($host, FILTER_VALIDATE_IP)) {
-        $ips = [$host];
-    } else {
-        $ips = gethostbynamel($host) ?: [];
-        foreach (@dns_get_record($host, DNS_AAAA) ?: [] as $r) {
-            if (!empty($r['ipv6'])) {
-                $ips[] = $r['ipv6'];
-            }
-        }
-    }
+    $ips = host_ips($host);
     foreach ($ips as $ip) {
         if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
             return []; // une seule adresse interne suffit à refuser (DNS piégé)
@@ -34,33 +40,46 @@ function public_ips(string $host): array
     return $ips;
 }
 
+// Cible autorisée pour une requête sortante : ['host', 'port', 'resolve' => entrée CURLOPT_RESOLVE],
+// ou le motif du refus : 'url' (adresse refusée), 'port' (ni 80 ni 443), 'dns' (nom introuvable),
+// 'private' (adresse du réseau interne).
+function outbound_target(string $url): array|string
+{
+    $p = parse_url($url);
+    $scheme = strtolower($p['scheme'] ?? '');
+    $host = strtolower($p['host'] ?? '');
+    // noms seulement (pas d'IP abrégée du type « 169.254 », interprétée comme une adresse par le résolveur)
+    $isIp = (bool) filter_var(trim($host, '[]'), FILTER_VALIDATE_IP);
+    if (!in_array($scheme, ['http', 'https'], true) || $host === '' || $host === 'localhost' || isset($p['user'])
+        || (!$isIp && !preg_match('#^(?=.*[a-z])[a-z0-9.-]+$#', $host))) {
+        return 'url';
+    }
+    $port = $p['port'] ?? ($scheme === 'https' ? 443 : 80);
+    if (!in_array($port, [80, 443], true)) {
+        return 'port';
+    }
+    $name = $isIp ? trim($host, '[]') : $host; // IPv6 littérale : [::1]
+    $ips = public_ips($name);
+    if (!$ips) {
+        return host_ips($name) ? 'private' : 'dns';
+    }
+    return ['host' => $host, 'port' => $port, 'resolve' => "$host:$port:" . (str_contains($ips[0], ':') ? "[{$ips[0]}]" : $ips[0])];
+}
+
 // GET limité en taille et en durée, redirections suivies à la main (chaque saut est revérifié),
 // adresse IP épinglée pour qu'un second résolveur DNS ne puisse pas rediriger vers le réseau interne.
 // $truncate : au-delà de $max, garder le début (pages HTML : les icônes sont dans l'en-tête) au lieu d'échouer.
 function icon_get(string $url, int $max, int $hops = 4, bool $truncate = false): ?array
 {
     for ($i = 0; $i <= $hops; $i++) {
-        $p = parse_url($url);
-        $scheme = strtolower($p['scheme'] ?? '');
-        $host = strtolower($p['host'] ?? '');
-        // noms seulement (pas d'IP abrégée du type « 169.254 », interprétée comme une adresse par le résolveur)
-        $isIp = (bool) filter_var(trim($host, '[]'), FILTER_VALIDATE_IP);
-        if (!in_array($scheme, ['http', 'https'], true) || $host === '' || $host === 'localhost' || isset($p['user'])
-            || (!$isIp && !preg_match('#^(?=.*[a-z])[a-z0-9.-]+$#', $host))) {
-            return null;
-        }
-        $ips = public_ips($host);
-        if (!$ips) {
-            return null;
-        }
-        $port = $p['port'] ?? ($scheme === 'https' ? 443 : 80);
-        if (!in_array($port, [80, 443], true)) {
+        $t = outbound_target($url);
+        if (!is_array($t)) {
             return null;
         }
         $body = '';
         $ch = curl_init($url);
         curl_setopt_array($ch, [
-            CURLOPT_RESOLVE => ["$host:$port:" . (str_contains($ips[0], ':') ? "[{$ips[0]}]" : $ips[0])],
+            CURLOPT_RESOLVE => [$t['resolve']],
             CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_TIMEOUT => ICON_TIMEOUT,
             CURLOPT_CONNECTTIMEOUT => 4,

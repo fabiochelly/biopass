@@ -19,10 +19,16 @@ class Item(val id: String, val rev: Long, val data: JSONObject) {
     val notes get() = s("notes")
     val folder get() = s("folder")
     val fav get() = data.optBoolean("fav", false)
+    /** Portée de la correspondance des [uris] : "domain" (défaut), "host" ou "exact". */
+    val match get() = s("match").ifEmpty { "domain" }
     val uris: List<String>
         get() = (data.optJSONArray("uris") ?: JSONArray()).let { a ->
             (0 until a.length()).mapNotNull { a.opt(it)?.takeIf { v -> v != JSONObject.NULL }?.toString() }
         }
+
+    /** Clés d'accès (passkeys) de l'entrée. */
+    val passkeys: List<Passkey>
+        get() = (data.optJSONArray("passkeys") ?: JSONArray()).let { a -> (0 until a.length()).mapNotNull { Passkey.from(a.optJSONObject(it)) } }
 
     class Field(val name: String, val value: String, val hidden: Boolean)
 

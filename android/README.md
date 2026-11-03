@@ -1,11 +1,12 @@
 # BioPass pour Android
 
 Application Android de BioPass : coffre hors ligne en lecture seule, déverrouillage par
-empreinte, et surtout **service de saisie automatique** (comme Bitwarden) pour remplir les
-identifiants dans les applications et les navigateurs.
+empreinte, **service de saisie automatique** (comme Bitwarden) pour remplir les identifiants
+dans les applications et les navigateurs, et **gestionnaire de passkeys** (Android 14+).
 
 - Android 9 (API 28) minimum, cible Android 15 (API 35).
-- Une seule dépendance, `androidx.autofill` (suggestions dans la barre du clavier) : APK d'environ 210 Kio, démarrage instantané.
+- Deux dépendances : `androidx.autofill` (suggestions dans la barre du clavier) et `androidx.credentials`
+  (fournisseur de passkeys) : APK d'environ 320 Kio, démarrage instantané.
 - Même protocole et même cryptographie que l'app web (`../PROTOCOL.md`) : le serveur ne voit
   jamais rien en clair.
 
@@ -82,6 +83,27 @@ Fonctionnement :
   10 minutes en mémoire seulement) ;
 - les écrans système (code PIN du téléphone, etc.) sont ignorés.
 
+## Passkeys (Android 14+)
+
+BioPass est un **fournisseur d'identifiants** d'Android : Paramètres → *Mots de passe, clés d'accès
+et comptes* → **Service préféré : BioPass** (bouton « Activer BioPass » dans les paramètres de
+l'app). Chrome et Brave doivent aussi avoir le réglage « Saisie automatique via un autre service ».
+
+- **Connexion** : quand une appli ou un site demande une passkey, la feuille d'Android propose vos
+  comptes BioPass ; vous touchez le compte, BioPass demande **l'empreinte** (ou le code du
+  téléphone), c'est connecté. Coffre verrouillé : « Déverrouiller BioPass » puis les comptes (une
+  seule empreinte).
+- **Création** : « Créer une clé d'accès » → BioPass, choix de l'entrée qui la reçoit (celle du même
+  identifiant par défaut, ou une nouvelle), empreinte. La clé n'est rendue au site qu'une fois
+  enregistrée sur le serveur (connexion nécessaire), sinon elle serait perdue.
+- **Mots de passe** : les applis qui passent par ce système reçoivent aussi les mots de passe des
+  entrées associées (`androidapp://…`), et peuvent en enregistrer.
+- **Qui a le droit** : un navigateur de la liste publiée par Google (`res/raw/privileged_browsers.json`,
+  signatures « release ») pour une page du domaine de la passkey, ou une appli que le site déclare
+  lui-même dans `https://<site>/.well-known/assetlinks.json` (Digital Asset Links). Toute autre appli
+  est refusée : elle ne peut pas se connecter à votre banque à votre place.
+- Mêmes passkeys que l'extension et l'import Bitwarden (champ `passkeys`, voir `../PROTOCOL.md`).
+
 ## Empreinte
 
 Proposée après le premier déverrouillage, ou dans Paramètres. La clé du coffre (et la clé
@@ -115,6 +137,8 @@ app/src/main/java/app/biopass/
   Bio.kt         Empreinte (Keystore + BiometricPrompt)
   Ui.kt, UnlockPanel.kt, *Activity.kt   Interface
   autofill/      Service de saisie automatique, analyse de l'AssistStructure, activité
+  passkey/       Fournisseur d'identifiants (Android 14+) : service, activité (empreinte),
+                 vérification de l'appelant ; WebAuthn lui-même dans core/Passkeys.kt
 app/src/test/    Tests JVM (vecteurs de test de core.js, intégration serveur)
 tools/           Script exécuté dans le conteneur, test d'intégration
 ```

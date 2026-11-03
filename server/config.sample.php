@@ -92,7 +92,7 @@ return [
 
     // [OPTIONNEL] Durée de validité d'une session côté serveur, en secondes (7 jours). Les applications
     // se reconnectent d'elles-mêmes à l'expiration : ce n'est pas le délai de verrouillage du coffre.
-    'token_ttl' => 7 * 86400,
+    'token_ttl' => 16 * 86400,
 
     // [OPTIONNEL] true si BioPass est derrière un reverse proxy (adresse IP du client lue dans
     // X-Forwarded-For, HTTPS détecté par X-Forwarded-Proto). Laisser false sinon : ces en-têtes

@@ -7,7 +7,7 @@
 **Le gestionnaire de mots de passe familial, auto-hébergé, chiffré de bout en bout.**
 
 Un serveur PHP sans base de données · une application web hors ligne · une extension Brave / Chrome ·
-une application de bureau native · une application Android avec saisie automatique.
+une application Android avec saisie automatique.
 
 [![Licence MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
@@ -39,21 +39,23 @@ BioPass reste invisible pour les robots et les curieux.
 
 ## Fonctionnalités
 
-| | Web (PWA) | Extension | Bureau | Android |
-|---|:-:|:-:|:-:|:-:|
-| Coffre chiffré de bout en bout, synchronisé | ✓ | ✓ | ✓ | ✓ |
-| Recherche instantanée tolérante aux fautes de frappe | ✓ | ✓ | ✓ | ✓ |
-| Lecture hors connexion | ✓ | ✓ | ✓ | ✓ |
-| Création et modification d'entrées, historique des mots de passe | ✓ | ✓ | ✓ | ✓ |
-| Codes 2FA (TOTP) | ✓ | ✓ | ✓ | ✓ |
-| Générateur de mots de passe | ✓ | ✓ | ✓ | ✓ |
-| Icônes des sites en haute définition | ✓ | ✓ | ✓ | ✓ |
-| Remplissage automatique | | ✓ | | ✓ |
-| Proposition d'enregistrer un nouveau mot de passe | | ✓ | | ✓ |
-| Déverrouillage par empreinte | | | | ✓ |
-| Partage sécurisé par lien (Send) | ✓ | | | |
-| Sauvegardes quotidiennes et restauration | ✓ | | | |
-| Import Bitwarden, export JSON | ✓ | | | |
+| | Web (PWA) | Extension | Android |
+|---|:-:|:-:|:-:|
+| Coffre chiffré de bout en bout, synchronisé | ✓ | ✓ | ✓ |
+| Recherche instantanée tolérante aux fautes de frappe | ✓ | ✓ | ✓ |
+| Lecture hors connexion | ✓ | ✓ | ✓ |
+| Création et modification d'entrées, historique des mots de passe | ✓ | ✓ | ✓ |
+| Codes 2FA (TOTP) | ✓ | ✓ | ✓ |
+| Générateur de mots de passe | ✓ | ✓ | ✓ |
+| Icônes des sites en haute définition | ✓ | ✓ | ✓ |
+| Remplissage automatique | | ✓ | ✓ |
+| Proposition d'enregistrer un nouveau mot de passe | | ✓ | ✓ |
+| Passkeys (clés d'accès WebAuthn) : création et connexion, avec l'empreinte sur Android 14+ | | ✓ | ✓ |
+| Déverrouillage par empreinte | | | ✓ |
+| Partage sécurisé par lien (Send) | ✓ | | |
+| Sauvegardes quotidiennes et restauration | ✓ | | |
+| Vérification des sites enregistrés (sites disparus, 404, domaines expirés) | ✓ | | |
+| Import Bitwarden, export JSON | ✓ | | |
 
 Et aussi : dossiers et favoris, champs personnalisés, cartes, identités et clés SSH importées,
 verrouillage automatique réglable (ou jamais), déconnexion de tous les appareils, thèmes clair
@@ -66,14 +68,13 @@ flowchart LR
     subgraph Appareils["Vos appareils : tout est chiffré et déchiffré ici"]
         W[App web / PWA]
         E[Extension Brave / Chrome]
-        D[App de bureau Rust]
         A[App Android]
     end
     subgraph Serveur["Votre serveur PHP"]
         API["api.php<br/>synchronisation"]
         DATA[("data/<br/>coffres chiffrés")]
     end
-    W & E & D & A -- "HTTPS + clé d'accès<br/>uniquement du chiffré" --> API
+    W & E & A -- "HTTPS + clé d'accès<br/>uniquement du chiffré" --> API
     API --> DATA
 ```
 
@@ -81,7 +82,7 @@ flowchart LR
   révision : les clients ne téléchargent que ce qui a changé, et deux modifications concurrentes
   sont détectées (conflit) au lieu de s'écraser.
 - **Les clients partagent la même logique.** La référence est `server/web/assets/core.js`, copiée
-  dans l'extension. Les versions Rust et Kotlin sont vérifiées contre des vecteurs de test communs :
+  dans l'extension. La version Kotlin est vérifiée contre des vecteurs de test communs :
   mêmes clés dérivées, même chiffrement, même ordre des résultats de recherche.
 - **Les icônes des sites** sont récupérées par le serveur (protégé contre le SSRF) à partir du seul
   nom de domaine, puis normalisées en PNG 128 px par le client et stockées *dans* l'entrée chiffrée,
@@ -132,13 +133,6 @@ Chaque version est construite par GitHub et publiée dans les
 | `biopass-server.zip` | le serveur, déjà construit : à déposer, puis configurer (étapes 1, 3 et 4 ci-dessous) |
 | `biopass-extension.zip` | l'extension Brave / Chrome |
 | `biopass-android.apk` | l'application Android |
-| `BioPass-macos.zip` | l'application de bureau macOS 11+ (Apple Silicon et Intel) |
-| `biopass-windows-x86_64.zip` | l'application de bureau Windows |
-| `biopass-linux-x86_64.tar.gz` | l'application de bureau Linux |
-
-Les applications ne sont pas signées par Apple ni par Microsoft. Sur **macOS**, ouvrez BioPass la
-première fois par clic droit → **Ouvrir** (ou `xattr -dr com.apple.quarantine /Applications/BioPass.app`).
-Sur **Windows**, SmartScreen peut demander « Informations complémentaires » → « Exécuter quand même ».
 
 **iPhone et iPad** : utilisez l'application web. Dans Safari, « Ajouter à l'écran d'accueil » donne
 une application plein écran, utilisable hors connexion. Il n'existe pas encore d'application iOS
@@ -231,7 +225,7 @@ d'accès.
 - **Ctrl+Maj+G** copie un mot de passe généré.
 - **Clic droit dans un champ** : « Remplir avec BioPass » ou « Générer un mot de passe ici ».
 - **Après une connexion**, un bandeau propose d'enregistrer le nouveau mot de passe ou de mettre à
-  jour l'ancien.
+  jour l'ancien. Après « Plus tard », ce mot de passe n'est plus proposé dans cet onglet.
 - **Remplissage cloisonné** : un mot de passe n'est transmis qu'à une page, ou une iframe, du domaine
   de l'entrée.
 
@@ -248,20 +242,15 @@ Installation, au choix (menu ☰ → **Applications et extension** du site) :
 > **Touche Compose et macros clavier (keyd…)** : Brave sous Wayland ne les transmet pas aux bulles
 > d'extension. Activez « Ouvrir BioPass dans une fenêtre » dans les réglages de l'extension.
 
-### Application de bureau (Linux, Windows, macOS)
+### Lanceur de bureau (Linux)
 
-Client natif en Rust (egui) : un binaire unique, ouverture instantanée et recherche immédiate.
-Il est pensé pour retrouver et copier un identifiant au clavier en une seconde.
+`tools/launcher-bridge.mjs` donne accès au coffre à un lanceur, sans application de plus : il tourne
+seulement le temps de la recherche et réutilise `core.js`. Le lanceur reçoit les noms et les identifiants,
+jamais un mot de passe : le pont les passe lui-même à `wl-copy`, marqués sensibles.
 
-Binaires prêts à l'emploi dans les [Releases](https://github.com/fabiochelly/biopass/releases/latest),
-ou depuis les sources :
-
-```sh
-cd desktop && cargo build --release
-packaging/linux/install.sh      # Linux : lanceur et icônes pour l'utilisateur courant, sans sudo
-```
-
-Raccourcis, cache et tests : [desktop/README.md](desktop/README.md).
+Déposez l'adresse complète avec la clé dans `~/.config/biopass-launcher/server` (droits 600). Après un
+premier déverrouillage, la clé du coffre reste dans le trousseau du bureau (`secret-tool`) jusqu'au
+verrouillage demandé au lanceur. Le protocole est décrit en tête du fichier.
 
 ### Application Android
 
@@ -286,9 +275,9 @@ et fonctionnement : [android/README.md](android/README.md).
 3. **Supprimez le fichier d'export**, qui contient tout en clair, y compris de la corbeille.
 
 Sont repris : identifiants, sites, codes 2FA, notes, champs personnalisés, favoris, dossiers (ou
-collections), historique des mots de passe, cartes, identités et clés SSH. Les passkeys ne peuvent
-pas être exportées par Bitwarden : une note le signale sur l'entrée. Un nouvel import ignore les
-doublons.
+collections), historique des mots de passe, cartes, identités, clés SSH et passkeys (utilisables
+ensuite par l'extension). Un nouvel import ignore les doublons, mais complète avec leurs passkeys les
+entrées importées avant que BioPass ne les prenne en charge.
 
 ## Administration et sauvegardes
 
@@ -298,6 +287,12 @@ Tout est dans `data/` : un fichier par compte et par coffre, plus les instantan�
 - **Instantanés quotidiens** de chaque coffre, conservés 30 jours (`backup_days`). Chacun peut
   comparer un instantané à son coffre actuel et restaurer des entrées depuis le site (menu ☰ →
   Sauvegardes).
+- **Nettoyage des entrées** (menu ☰ → Vérifier les sites enregistrés) : le serveur visite chaque site
+  enregistré, 8 à la fois, et liste les entrées dont le site ne répond plus, renvoie une erreur (404…)
+  ou dont le domaine n'existe plus (DNS, puis registre du domaine via RDAP). On coche et on supprime ;
+  une copie reste dans les instantanés. Le serveur reçoit les adresses des sites (jamais les
+  identifiants) et n'en garde rien. Avec PHP-FPM, prévoyez `pm.max_children` ≥ 10 pour que
+  l'analyse n'occupe pas tous les processus.
 - **En ligne de commande**, sur le serveur :
 
 ```sh
@@ -312,7 +307,6 @@ php bin/admin.php delete <nom>     # supprime un compte
 server/            serveur PHP (points d'entrée, src/) et application web (web/)
   web/assets/      core.js = référence du protocole client, partagée avec l'extension
 extension/         extension Manifest V3 (lib/ = copie de core.js et icons.js)
-desktop/           application de bureau Rust + egui
 android/           application Android (Kotlin, sans framework), compilée dans Docker
 tools/             build, déploiement, tests, vecteurs de test communs, pages de test
 PROTOCOL.md        protocole et formats, à respecter par tous les clients
@@ -322,11 +316,10 @@ PROTOCOL.md        protocole et formats, à respecter par tous les clients
 php -S 127.0.0.1:8000 -t server   # développement local : sert directement server/web/ (sans build)
 tools/sync-core.sh                # après une modification de core.js ou icons.js
 tools/test-all.sh                 # serveur, sauvegardes, Send, extension (Chromium headless), 404
-(cd desktop && cargo test)        # vecteurs de chiffrement et de recherche, côté Rust
-(cd android && ./build.sh test)   # les mêmes vecteurs, côté Kotlin
+(cd android && ./build.sh test)   # vecteurs de chiffrement et de recherche, côté Kotlin
 ```
 
-- `tools/test-vectors.json` et `tools/search-vectors.json` garantissent que JavaScript, Rust et
+- `tools/test-vectors.json` et `tools/search-vectors.json` garantissent que JavaScript et
   Kotlin dérivent les mêmes clés et classent les résultats de recherche à l'identique.
 - `tools/test-sites/` rassemble des pages de connexion piégeuses (deux étapes, shadow DOM, iframe
   d'un autre domaine, champs à la React) ; ajoutez-y tout site qui pose problème à l'extension.
@@ -338,8 +331,7 @@ git tag v1.0.0 && git push origin v1.0.0
 ```
 
 Le workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) construit alors
-l'application de bureau (Linux, Windows, macOS universel), l'APK, l'extension et le serveur, puis
-publie la Release. Il peut aussi être lancé à la main (onglet Actions) pour construire sans publier.
+l'APK, l'extension et le serveur, puis publie la Release. Il peut aussi être lancé à la main (onglet Actions) pour construire sans publier.
 
 L'APK des Releases est signée par une clé dédiée, fournie dans le secret `ANDROID_SIGNING` du dépôt
 (archive tar de `biopass.jks` et `keystore.properties`, encodée en base64). La même clé doit servir

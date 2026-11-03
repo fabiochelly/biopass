@@ -1,0 +1,59 @@
+<!doctype html><meta charset=utf-8><title>Clés d'accès</title>
+<style>body{font:16px sans-serif;padding:40px} input,button{display:block;margin:10px 0;padding:8px} input{width:260px}</style>
+<h1>Clés d'accès</h1>
+<button id="reg">Créer une clé d'accès</button>
+<button id="again">Recréer (clé exclue)</button>
+<button id="login">Se connecter avec une clé d'accès</button>
+<button id="cond">Attente conditionnelle</button>
+<input id="user" name="username" autocomplete="username webauthn" placeholder="Identifiant">
+<script>
+// Partie « serveur » simulée dans la page : vérifie elle-même attestation et signatures (WebCrypto).
+const b64u = (b) => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64u = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+const sha = async (b) => new Uint8Array(await crypto.subtle.digest('SHA-256', b));
+const eq = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+const rawSig = (der) => { // DER → r || s (32 + 32)
+  const out = new Uint8Array(64); let i = 2;
+  for (const off of [0, 32]) { const len = der[i + 1]; let v = der.subarray(i + 2, i + 2 + len); i += 2 + len;
+    while (v.length > 32) v = v.subarray(1); out.set(v, off + 32 - v.length); }
+  return out;
+};
+window.state = {};
+const stored = {};
+const challengeOf = (c) => JSON.parse(new TextDecoder().decode(c.response.clientDataJSON));
+
+async function create(exclude) {
+  const challenge = crypto.getRandomValues(new Uint8Array(32));
+  const c = await navigator.credentials.create({ publicKey: {
+    rp: { name: 'Test RP' }, user: { id: new Uint8Array([1, 2, 3, 4]), name: 'dave', displayName: 'Dave' }, challenge,
+    pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+    authenticatorSelection: { residentKey: 'required', userVerification: 'preferred' }, extensions: { credProps: true },
+    excludeCredentials: exclude ? [{ type: 'public-key', id: unb64u(exclude) }] : [],
+  } });
+  const cd = challengeOf(c);
+  const ad = new Uint8Array(c.response.getAuthenticatorData());
+  stored.id = c.id; stored.spki = c.response.getPublicKey();
+  return {
+    id: c.id, instance: c instanceof PublicKeyCredential, type: cd.type, origin: cd.origin, challengeOk: cd.challenge === b64u(challenge),
+    rpHashOk: eq(ad.subarray(0, 32), await sha(new TextEncoder().encode(location.hostname))), flags: ad[32],
+    alg: c.response.getPublicKeyAlgorithm(), rk: c.getClientExtensionResults().credProps?.rk, json: JSON.parse(JSON.stringify(c)).response.attestationObject === b64u(c.response.attestationObject),
+  };
+}
+
+async function get(mediation) {
+  const challenge = crypto.getRandomValues(new Uint8Array(32));
+  const c = await navigator.credentials.get({ mediation, publicKey: { challenge, rpId: location.hostname, userVerification: 'preferred' } });
+  const cd = challengeOf(c);
+  const ad = new Uint8Array(c.response.authenticatorData);
+  const key = await crypto.subtle.importKey('spki', stored.spki, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+  const msg = new Uint8Array([...ad, ...(await sha(c.response.clientDataJSON))]);
+  const ok = await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key, rawSig(new Uint8Array(c.response.signature)), msg);
+  return { ok, sameId: c.id === stored.id, type: cd.type, origin: cd.origin, challengeOk: cd.challenge === b64u(challenge), user: [...new Uint8Array(c.response.userHandle)].join(',') };
+}
+
+const run = (k, f) => () => f().then((r) => { state[k] = r; }, (e) => { state[k] = { error: e.name }; });
+document.getElementById('reg').onclick = run('reg', () => create());
+document.getElementById('again').onclick = run('again', () => create(stored.id));
+document.getElementById('login').onclick = run('login', () => get());
+document.getElementById('cond').onclick = run('cond', () => get('conditional'));
+</script>

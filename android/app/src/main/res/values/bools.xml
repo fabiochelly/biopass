@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fournisseur d'identifiants : Android 14+ seulement (cf. values-v34) -->
+    <bool name="bp_credential_provider">false</bool>
+</resources>

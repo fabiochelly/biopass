@@ -42,15 +42,43 @@ object Domains {
         return if (last2 in MULTI) p.takeLast(3).joinToString(".") else last2
     }
 
+    /** Adresse sans paramètres ni ancre, sans « / » final (équivalent de `pageKey` dans core.js). */
+    fun pageKey(uri: String?): String {
+        if (uri.isNullOrBlank()) return ""
+        val u = uri.trim().let { if (SCHEME.containsMatchIn(it)) it else "https://$it" }
+        return try {
+            val p = java.net.URI(u.substringBefore('#').substringBefore('?'))
+            val scheme = p.scheme?.lowercase(Locale.ROOT) ?: return ""
+            val host = p.host?.lowercase(Locale.ROOT) ?: return ""
+            val port = if (p.port < 0 || (scheme == "https" && p.port == 443) || (scheme == "http" && p.port == 80)) "" else ":${p.port}"
+            "$scheme://$host$port${p.rawPath ?: ""}".trimEnd('/').lowercase(Locale.ROOT)
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
+    /** Hôte de la page couvert par l'URI selon la portée [Item.match] (cf. `matchesUrl` dans core.js). */
+    private fun hostMatches(item: Item, uri: String, host: String): Boolean {
+        val h = hostOf(uri)
+        if (h.isEmpty()) return false
+        return when (item.match) {
+            "host" -> host == h || host.endsWith(".$h")
+            "exact" -> host == h // l'adresse complète n'est pas connue ici : même hôte au moins
+            else -> baseDomain(h) == baseDomain(host)
+        }
+    }
+
     fun matchesUrl(item: Item, pageUrl: String): Boolean {
-        val d = baseDomain(hostOf(pageUrl))
-        return d.isNotEmpty() && item.uris.any { baseDomain(hostOf(it)) == d }
+        val host = hostOf(pageUrl)
+        if (host.isEmpty()) return false
+        if (item.match == "exact") return pageKey(pageUrl).let { k -> item.uris.any { pageKey(it) == k } }
+        return item.uris.any { hostMatches(item, it, host) }
     }
 
     /** Correspondance pour la saisie automatique : domaine web (hors androidapp://) ou paquet d'app. */
     fun matchesWebDomain(item: Item, webDomain: String): Boolean {
-        val d = baseDomain(webDomain)
-        return d.isNotEmpty() && item.uris.any { !isAppUri(it) && baseDomain(hostOf(it)) == d }
+        val host = webDomain.lowercase(Locale.ROOT).removeSuffix(".")
+        return host.isNotEmpty() && item.uris.any { !isAppUri(it) && hostMatches(item, it, host) }
     }
 
     fun appUri(pkg: String) = "androidapp://$pkg"

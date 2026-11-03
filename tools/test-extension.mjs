@@ -38,6 +38,23 @@ async function tab(url) {
   return t;
 }
 
+// Bandeau BioPass (shadow DOM fermé) : DOM.getDocument({ pierce }) traverse aussi les racines fermées
+async function uiFind(t, pred) {
+  const { root } = await send('DOM.getDocument', { depth: -1, pierce: true }, t.sessionId);
+  const all = []; const walk = (n) => { all.push(n); for (const c of [...(n.children || []), ...(n.shadowRoots || [])]) walk(c); }; walk(root);
+  const cls = (n) => (n.attributes || [])[(n.attributes || []).indexOf('class') + 1] || '';
+  const n = all.find((x) => x.nodeType === 1 && pred(x, cls(x)));
+  if (!n) throw new Error('élément du bandeau introuvable');
+  const { object } = await send('DOM.resolveNode', { backendNodeId: n.backendNodeId }, t.sessionId);
+  const call = async (fn) => (await send('Runtime.callFunctionOn', { objectId: object.objectId, functionDeclaration: fn, returnByValue: true }, t.sessionId)).result.value;
+  return {
+    text: () => call('function () { return this.value ?? this.textContent; }'),
+    click: async () => { const { model } = await send('DOM.getBoxModel', { backendNodeId: n.backendNodeId }, t.sessionId); const q = model.border; await t.click((q[0] + q[4]) / 2, (q[1] + q[5]) / 2); },
+  };
+}
+const byClass = (c) => (n, cls) => cls.split(' ').includes(c);
+const byText = (txt) => (n) => (n.children || []).some((c) => c.nodeType === 3 && c.nodeValue === txt);
+
 let ok = 0; const check = (name, cond, extra = '') => { if (cond) { ok++; console.log('  ✓', name); } else { console.log('  ✗', name, extra); process.exitCode = 1; } };
 try {
   await sleep(1500);
@@ -154,11 +171,175 @@ try {
   await g.shot('ext-06-save-banner');
   const banner = await g.js(`!!document.querySelector('biopass-ui')`);
   check('bandeau « mettre à jour » affiché après connexion', banner);
-  // bouton principal du bandeau : en haut à droite (top 16 + ~ 105px), largeur 340
-  await g.click(1000 - 16 - 16 - 50, 16 + 16 + 24 + 6 + 40 + 18); await sleep(1500);
+  const gpw = await uiFind(g, byClass('mono'));
+  check('bandeau : mot de passe à demi masqué', (await gpw.text()) === 'No••••••42', await gpw.text());
+  await (await uiFind(g, byClass('eye'))).click(); await sleep(200);
+  check('bandeau : œil → mot de passe en clair', (await gpw.text()) === 'NouveauMotDePasse!42', await gpw.text());
+  await (await uiFind(g, byClass('primary'))).click(); await sleep(1500);
   await g.shot('ext-07-after-save');
   const items2 = (await bg({ type: 'list' })).data;
   check('mot de passe Google mis à jour dans le coffre', items2.find((i) => i.name === 'Google')?.password === 'NouveauMotDePasse!42', items2.find((i) => i.name === 'Google')?.password);
+
+  // 7b. Nouvel identifiant : portée de la correspondance choisie dans le bandeau
+  const nv = await tab('http://login.nouveau.localhost:8766/simple.html');
+  await nv.activate();
+  await nv.js(`document.querySelector('[name=login]').value = 'carole'; document.querySelector('[name=pwd]').value = 'Carole-pw-2026'`);
+  const sb = await nv.rect('button'); await nv.click(sb.x, sb.y); await sleep(2000);
+  await nv.shot('ext-07b-add-banner');
+  const siteIn = await uiFind(nv, byClass('inp'));
+  check('bandeau « enregistrer » : domaine proposé par défaut', (await siteIn.text()) === 'nouveau.localhost', await siteIn.text());
+  check('bandeau : identifiant pré-rempli', (await (await uiFind(nv, byClass('cin'))).text()) === 'carole');
+  await (await uiFind(nv, byClass('scope'))).click(); await sleep(150);
+  await nv.shot('ext-07b2-add-banner-scope');
+  await (await uiFind(nv, byText('URL exacte'))).click(); await sleep(100);
+  check('bandeau : URL exacte proposée', (await siteIn.text()) === 'login.nouveau.localhost:8766/simple.html', await siteIn.text());
+  await (await uiFind(nv, byText('Hôte'))).click(); await sleep(100);
+  check('bandeau : hôte proposé', (await siteIn.text()) === 'login.nouveau.localhost:8766', await siteIn.text());
+  await (await uiFind(nv, byClass('primary'))).click(); await sleep(1500);
+  const added = (await bg({ type: 'list' })).data.find((i) => i.username === 'carole');
+  check('nouvel identifiant enregistré avec la portée « hôte »', added?.match === 'host' && added.uris?.[0] === 'http://login.nouveau.localhost:8766' && added.password === 'Carole-pw-2026', JSON.stringify(added));
+  const nvTab = async (u) => { await nv.go(u); return pop.js(`chrome.tabs.query({}).then(t => t.find(x => x.url?.includes('nouveau.localhost')).id)`); };
+  let nvId = await nvTab('http://autre.nouveau.localhost:8766/simple.html');
+  await bg({ type: 'command', name: 'autofill', tabId: nvId }); await sleep(400);
+  check('portée « hôte » : pas proposé sur un autre sous-domaine', (await nv.js(`document.querySelector('[name=pwd]').value`)) === '');
+  nvId = await nvTab('http://login.nouveau.localhost:8766/simple.html');
+  await bg({ type: 'command', name: 'autofill', tabId: nvId }); await sleep(400);
+  check('portée « hôte » : rempli sur son hôte', (await nv.js(`document.querySelector('[name=pwd]').value`)) === 'Carole-pw-2026');
+
+  // 7b''. Compte existant + connexion sans identifiant : « Ajouter » proposé d'abord, « Modifier » au choix
+  const nv2 = await tab('http://login.nouveau.localhost:8766/simple.html');
+  await nv2.activate();
+  await nv2.js(`document.querySelector('[name=pwd]').value = 'Carole-pw-2027'`);
+  const sb3 = await nv2.rect('button'); await nv2.click(sb3.x, sb3.y); await sleep(2000);
+  check('compte existant, identifiant inconnu : « Ajouter » par défaut', (await (await uiFind(nv2, byClass('cin'))).text()) === '');
+  await nv2.shot('ext-07b4-banner-add-tab');
+  await (await uiFind(nv2, byText('Modifier'))).click(); await sleep(200);
+  await nv2.shot('ext-07b5-banner-update-tab');
+  const acctUser = await uiFind(nv2, (n, c) => c === 'u' && byText('carole')(n));
+  check('« Modifier » : le compte du site est proposé', (await acctUser.text()) === 'carole');
+  await (await uiFind(nv2, byClass('primary'))).click(); await sleep(1500);
+  const carole = (await bg({ type: 'list' })).data.filter((i) => i.username === 'carole');
+  check('« Modifier » : mot de passe du compte choisi remplacé, sans doublon', carole.length === 1 && carole[0].password === 'Carole-pw-2027' && carole[0].history?.[0]?.password === 'Carole-pw-2026', JSON.stringify(carole));
+  await send('Target.closeTarget', { targetId: nv2.targetId });
+
+  // 7b'. Identifiant non détecté : saisi dans le bandeau avant l'enregistrement
+  const sans = await tab('http://sans.localhost:8766/simple.html');
+  await sans.activate();
+  await sans.js(`document.querySelector('[name=pwd]').value = 'Dora-pw-2026'`);
+  const sb2 = await sans.rect('button'); await sans.click(sb2.x, sb2.y); await sleep(2000);
+  const who = await uiFind(sans, byClass('cin'));
+  check('bandeau : identifiant vide proposé à la saisie', (await who.text()) === '');
+  await sans.shot('ext-07b3-add-banner-no-user');
+  await who.click(); await sans.type('dora@example.com'); await sleep(100);
+  await (await uiFind(sans, byClass('primary'))).click(); await sleep(1500);
+  const dora = (await bg({ type: 'list' })).data.find((i) => i.password === 'Dora-pw-2026');
+  check('identifiant saisi dans le bandeau enregistré', dora?.username === 'dora@example.com', JSON.stringify(dora));
+  await send('Target.closeTarget', { targetId: sans.targetId }); // onglet en trop : décale les onglets rendus en arrière-plan
+
+  // 7b''. Refus : le bandeau ne revient pas tant que l'on reste sur le formulaire
+  const ref = await tab('http://refus.localhost:8766/simple.html');
+  await ref.activate();
+  await ref.js(`document.querySelector('form').addEventListener('submit', (e) => e.preventDefault());
+    document.querySelector('form').insertAdjacentHTML('beforeend', '<button type=button id=oeil>Afficher</button>');
+    document.querySelector('[name=login]').value = 'erin'; document.querySelector('[name=pwd]').value = 'Refus-pw-1'`);
+  const refSub = await ref.rect('button:not(#oeil)'), refEye = await ref.rect('#oeil');
+  const refHas = () => uiFind(ref, byClass('save')).then(() => true, () => false);
+  await ref.click(refSub.x, refSub.y); await sleep(1100);
+  check('refus : bandeau proposé à la première soumission', await refHas());
+  await (await uiFind(ref, byClass('x'))).click(); await sleep(200);
+  check('refus : bandeau fermé par « Plus tard »', !(await refHas()));
+  await ref.click(refEye.x, refEye.y); await sleep(1100);
+  check('refus : pas de nouveau bandeau en cliquant ailleurs sur le formulaire', !(await refHas()));
+  await ref.click(refSub.x, refSub.y); await sleep(1100);
+  check('refus : pas de nouveau bandeau en resoumettant le même mot de passe', !(await refHas()));
+  await ref.js(`document.querySelector('[name=pwd]').value = 'Refus-pw-2'`);
+  await ref.click(refEye.x, refEye.y); await sleep(1100);
+  check('refus : mot de passe retouché, simple clic ailleurs : toujours rien', !(await refHas()));
+  await ref.go('http://refus.localhost:8766/simple.html');
+  await ref.js(`document.querySelector('form').addEventListener('submit', (e) => e.preventDefault());
+    document.querySelector('[name=login]').value = 'erin'; document.querySelector('[name=pwd]').value = 'Refus-pw-1'`);
+  await ref.click(refSub.x, refSub.y); await sleep(1100);
+  check('refus : mémorisé après rechargement de la page', !(await refHas()));
+  await ref.js(`document.querySelector('[name=pwd]').value = 'Refus-pw-3'`);
+  await ref.click(refSub.x, refSub.y); await sleep(1100);
+  check('refus : un autre mot de passe soumis est proposé', await refHas());
+  // bandeau ouvert : un clic sur la page, même mot de passe, ne le recrée pas (saisie conservée)
+  const refWho = await uiFind(ref, byClass('cin'));
+  await refWho.click(); await ref.type('-bis'); await sleep(100);
+  await ref.click(10, 10); await ref.click(refSub.x, refSub.y); await sleep(1100);
+  check('bandeau ouvert : pas recréé, saisie conservée', (await (await uiFind(ref, byClass('cin'))).text()) === 'erin-bis', await (await uiFind(ref, byClass('cin'))).text());
+  await send('Target.closeTarget', { targetId: ref.targetId });
+
+  // 7c. Clés d'accès (WebAuthn) : création, connexion (bandeau, puis menu d'une demande conditionnelle), clé exclue.
+  // La page vérifie elle-même attestation et signatures (tools/test-sites/passkey.html).
+  const pk = await tab('http://pk.localhost:8766/passkey.html');
+  await pk.activate();
+  const pkClick = async (sel) => { const r = await pk.rect(sel); await pk.click(r.x, r.y); };
+  const pkState = (k) => pk.js(`state.${k}`);
+  await pkClick('#reg'); await sleep(800);
+  await pk.shot('ext-07c-passkey-create');
+  await (await uiFind(pk, byClass('primary'))).click(); await sleep(1500);
+  let st = await pkState('reg');
+  check('clé d’accès créée (attestation valide pour la page)', st?.instance && st.type === 'webauthn.create' && st.origin === 'http://pk.localhost:8766'
+    && st.challengeOk && st.rpHashOk && st.flags === 0x5d && st.alg === -7 && st.rk === true && st.json, JSON.stringify(st));
+  const pkItem = (await bg({ type: 'list' })).data.find((i) => i.name === 'Test RP');
+  check('clé d’accès rangée dans une nouvelle entrée', pkItem?.username === 'dave' && pkItem.passkeys?.length === 1 && pkItem.passkeys[0].rpId === 'pk.localhost'
+    && pkItem.passkeys[0].credentialId === st?.id, JSON.stringify(pkItem?.passkeys?.map(({ key, ...p }) => p)));
+  await pkClick('#login'); await sleep(800);
+  await pk.shot('ext-07d-passkey-login');
+  await (await uiFind(pk, byClass('pkey'))).click(); await sleep(1000);
+  st = await pkState('login');
+  check('connexion par clé d’accès (bandeau) : signature vérifiée par la page', st?.ok && st.sameId && st.type === 'webauthn.get' && st.origin === 'http://pk.localhost:8766'
+    && st.challengeOk && st.user === '1,2,3,4', JSON.stringify(st));
+  await pkClick('#cond'); await sleep(500);
+  await pkClick('#user'); await sleep(800);
+  await pk.shot('ext-07e-passkey-conditional');
+  await (await uiFind(pk, byText('Clé d\'accès · dave'))).click(); await sleep(1000);
+  st = await pkState('cond');
+  check('connexion par clé d’accès (menu sous le champ, demande conditionnelle)', st?.ok && st.sameId && st.challengeOk, JSON.stringify(st));
+  await pkClick('#again'); await sleep(1000);
+  st = await pkState('again');
+  check('clé d’accès déjà dans BioPass : InvalidStateError', st?.error === 'InvalidStateError', JSON.stringify(st));
+  const pkHas = async (c) => !!(await uiFind(pk, byClass(c)).catch(() => null));
+  await pkClick('#login'); await sleep(800);
+  check('bandeau de connexion léger : le site, le compte et son bouton, « Autre méthode »', await pkHas('pkey') && !(await pkHas('field'))
+    && !!(await uiFind(pk, byText('pk.localhost'))) && !!(await uiFind(pk, byText('Se connecter'))) && !!(await uiFind(pk, byText('Autre méthode'))));
+  await (await uiFind(pk, byClass('x'))).click(); await sleep(300);
+  st = await pkState('login');
+  check('bandeau annulé : NotAllowedError pour le site', st?.error === 'NotAllowedError', JSON.stringify(st));
+  // Identifiant différent : choix de l'entrée sur une ligne ; identifiant connu, aucune question (vu plus haut)
+  await pkClick('#reg'); await sleep(800);
+  check('création, entrée évidente : aucun choix à faire', !(await pkHas('to')));
+  await (await uiFind(pk, byClass('x'))).click(); await sleep(300);
+  await bg({ type: 'save', item: { ...(await bg({ type: 'list' })).data.find((i) => i.name === 'Test RP'), username: 'autre' } });
+  await pkClick('#reg'); await sleep(800);
+  await pk.shot('ext-07f-passkey-choose-entry');
+  check('création, identifiant différent : choix de l’entrée', await pkHas('to'));
+  await (await uiFind(pk, byClass('x'))).click(); await sleep(300);
+  // Coffre verrouillé : la demande reprend seule une fois déverrouillé
+  await bg({ type: 'lock' });
+  await pk.js('state.login = null');
+  await pkClick('#login'); await sleep(800);
+  await pk.shot('ext-07g-passkey-locked');
+  check('coffre verrouillé : proposition de déverrouiller, sans compte', !(await pkHas('pkey')) && !!(await uiFind(pk, byText('Déverrouiller'))));
+  await bg({ type: 'unlock', password: 'ext-password-123' }); await sleep(1800);
+  check('déverrouillé : le compte apparaît sans autre clic', await pkHas('pkey'));
+  await (await uiFind(pk, byClass('pkey'))).click(); await sleep(1000);
+  st = await pkState('login');
+  check('connexion après déverrouillage', st?.ok && st.sameId, JSON.stringify(st));
+  // Plusieurs comptes, clair puis sombre (captures seulement) : une carte et un bouton par compte
+  const pkMany = (await bg({ type: 'list' })).data.find((i) => i.name === 'Test RP');
+  await bg({ type: 'save', item: { ...pkMany, passkeys: [...pkMany.passkeys, { ...pkMany.passkeys[0], credentialId: 'AAAA', userHandle: 'BBBB', userName: 'une.adresse.vraiment.tres.longue@exemple-de-domaine.fr' }] } });
+  await pkClick('#login'); await sleep(800);
+  await pk.shot('ext-07h-passkey-accounts');
+  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] }, pk.sessionId); await sleep(300);
+  await pk.shot('ext-07i-passkey-accounts-dark');
+  await send('Emulation.setEmulatedMedia', { features: [] }, pk.sessionId);
+  await (await uiFind(pk, byClass('x'))).click(); await sleep(300);
+  await pkClick('#login'); await sleep(800);
+  await (await uiFind(pk, byText('Autre méthode'))).click(); await sleep(500);
+  check('« Autre méthode » ferme le bandeau et laisse faire le navigateur', !(await pkHas('banner')));
+  await send('Target.closeTarget', { targetId: pk.targetId });
 
   // 8. Verrouillage
   await bg({ type: 'lock' });

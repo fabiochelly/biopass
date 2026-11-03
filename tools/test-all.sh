@@ -17,6 +17,7 @@ SERVER='http://127.0.0.1:8765/biopass/?k=cle-test'
 sleep 0.5
 tools/sync-core.sh
 echo "== Vecteurs de test"; node tools/make-vectors.mjs
+echo "== Passkeys";        node tools/test-passkeys.mjs
 echo "== Clé d'accès"
 NGINX404=8eec510e57f5f732fd2cce73df7b73ef   # md5 du 404 nginx pour un .php inexistant
 check404() {  # $1 = URL relative à /biopass/, $2 = options curl
@@ -30,10 +31,12 @@ echo "OK : 404 sans clé (identique à nginx), 200 avec"
 echo "== Serveur";          node tools/test-server.mjs "$SERVER"
 echo "== Sauvegardes";      node tools/test-backups.mjs "$SERVER" "$T/www/biopass"
 echo "== Send";             node tools/test-send.mjs "$SERVER"
+echo "== Vérification des sites"; node tools/test-check.mjs "$SERVER"
+echo "== Pont des lanceurs"; node tools/test-bridge.mjs "$SERVER"
 echo "== Extension";        node tools/seed-extension.mjs "$SERVER" && S="$T" BP_SERVER="$SERVER" node tools/test-extension.mjs
 echo "== Extension : connexion permanente"; BP_SERVER="$SERVER" node tools/test-extension-persist.mjs
 echo "== Fichiers internes (même avec la clé)"
-for u in src/ bin/ data/ data/users/ data/vaults/ data/locks/ config.php src/lib.php src/api.php src/404.php src/index.php src/favicon.php src/send.php src/icons.php bin/admin.php bin/build-web.php web.php downloads.php \
+for u in src/ bin/ data/ data/users/ data/vaults/ data/locks/ config.php src/lib.php src/api.php src/404.php src/index.php src/favicon.php src/check.php src/send.php src/icons.php bin/admin.php bin/build-web.php web.php downloads.php \
          $(cd "$T/www/biopass" && find data -type f | head -50); do
   check404 "$u" "-b bpk=cle-test"
 done

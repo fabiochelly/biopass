@@ -19,6 +19,14 @@
     </style>
     <style name="Theme.BioPass" parent="Theme.BioPass.Base" />
 
+    <!-- Demandes de clés d'accès : fenêtre transparente, seul le dialogue d'empreinte apparaît -->
+    <style name="Theme.BioPass.Translucent" parent="Theme.BioPass">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.Translucent</item>
+    </style>
+
     <style name="BioPass.Transitions" parent="android:Animation.Activity">
         <item name="android:activityOpenEnterAnimation">@anim/bp_open_enter</item>
         <item name="android:activityOpenExitAnimation">@anim/bp_open_exit</item>

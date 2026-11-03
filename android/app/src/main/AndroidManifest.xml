@@ -45,6 +45,30 @@
             android:taskAffinity=""
             android:windowSoftInputMode="adjustResize" />
 
+        <activity
+            android:name=".passkey.PasskeyActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:taskAffinity=""
+            android:theme="@style/Theme.BioPass.Translucent"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- Fournisseur d'identifiants Android 14+ : passkeys et mots de passe (ignoré avant Android 14). -->
+        <service
+            android:name=".passkey.PasskeyService"
+            android:enabled="@bool/bp_credential_provider"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_CREDENTIAL_PROVIDER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.credentials.CredentialProviderService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.credentials.provider"
+                android:resource="@xml/credential_provider" />
+        </service>
+
         <service
             android:name=".autofill.BioAutofillService"
             android:exported="true"

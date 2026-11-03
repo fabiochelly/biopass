@@ -24,6 +24,7 @@ function run_api(): void
             'password' => ['POST', 'api_password'],
             'revoke' => ['POST', 'api_revoke'],
             'favicon' => ['GET', 'api_favicon'],
+            'check' => ['POST', 'api_check'],
             'backups' => ['GET', 'api_backups'],
             'send_create' => ['POST', 'api_send_create'],
             'send_list' => ['GET', 'api_send_list'],
@@ -417,6 +418,22 @@ function api_favicon(array $in): ?array
     header('Content-Length: ' . strlen($icon['body']));
     echo $icon['body'];
     return null;
+}
+
+// Vérification d'une adresse enregistrée (nettoyage du coffre) : {url} → {url, status, detail, code?, final?, …}.
+// POST : l'adresse complète ne doit pas finir dans les journaux du serveur web. Rien n'est conservé.
+function api_check(array $in): array
+{
+    require_user();
+    if (!function_exists('curl_init')) {
+        throw new ApiError(501, 'Extension PHP curl requise pour la vérification des sites');
+    }
+    $url = $in['url'] ?? null;
+    if (!is_string($url) || trim($url) === '' || strlen($url) > 4096) {
+        throw new ApiError(400, 'Adresse invalide');
+    }
+    require_once __DIR__ . '/check.php';
+    return check_url($url);
 }
 
 function api_revoke(array $in): array

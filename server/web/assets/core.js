@@ -293,20 +293,22 @@ export class Vault {
     this.reset();
   }
 
-  async _decrypt(id, it) {
+  async _decrypt(id, it, into = this.items) {
     try {
       const obj = await decryptItem(this.key, id, it.enc);
       obj._id = id;
       obj._rev = it.rev;
-      this.items.set(id, obj);
+      into.set(id, obj);
     } catch {
       console.warn('BioPass: entrée indéchiffrable', id);
     }
   }
 
+  // Nouvelle table remplie à part puis échangée d'un coup : jamais de coffre à moitié déchiffré visible
   async _decryptAll() {
-    this.items = new Map();
-    await Promise.all(Object.entries(this.cache.items).map(([id, it]) => this._decrypt(id, it)));
+    const items = new Map();
+    await Promise.all(Object.entries(this.cache.items).map(([id, it]) => this._decrypt(id, it, items)));
+    this.items = items;
   }
 
   // Nouvelle session serveur sans mot de passe (token expiré, retour du réseau). Échoue (401)
@@ -445,7 +447,7 @@ export class Vault {
     const now = Date.now();
     const byHost = new Map();
     for (const it of this.items.values()) {
-      const fresh = it.icon && (it.iconV || 1) >= ICON_VERSION;
+      const fresh = it.icon && (it.iconV || 1) >= iconWanted(it);
       if (ids ? !ids.includes(it._id) : (fresh || (!it.icon && !retry && it.iconTry && now - it.iconTry < ICON_RETRY))) continue;
       const host = iconHost(it);
       if (host && !(now - (iconErrors.get(host) || 0) < ICON_ERROR_RETRY)) byHost.set(host, [...(byHost.get(host) || []), it]);
@@ -472,14 +474,17 @@ export class Vault {
         if (icon !== undefined) { // undefined : format illisible dans ce contexte, un autre client réessaiera
           for (const it of byHost.get(host)) {
             // échec d'une mise à niveau : on garde l'ancienne icône
-            if (!icon && it.icon) changes.push({ item: { ...it, iconV: ICON_VERSION } });
-            else changes.push({ item: icon ? { ...it, icon: icon.icon, iconTone: icon.tone || undefined, iconV: ICON_VERSION, iconTry: undefined } : { ...it, iconTry: now } });
+            if (!icon && it.icon) changes.push({ item: { ...it, iconV: iconWanted(it) } });
+            else changes.push({ item: icon ? { ...it, icon: icon.icon, iconTone: icon.tone || undefined, iconV: iconWanted(it), iconTry: undefined } : { ...it, iconTry: now } });
           }
         }
         onProgress?.(++done, done + hosts.length);
       }
     };
     await Promise.all(Array.from({ length: concurrency }, worker));
+    // entrée supprimée ou modifiée pendant le téléchargement : ne pas la ressusciter ni écraser la modification
+    const current = changes.filter((c) => this.items.get(c.item._id)?._rev === c.item._rev);
+    changes.splice(0, changes.length, ...current);
     let saved = 0;
     for (let i = 0; i < changes.length; i += 50) {
       try {
@@ -573,6 +578,10 @@ export function diffVaults(before, after) {
 
 export const ICON_SIZE = 128;
 export const ICON_VERSION = 6; // 2 : 64 px + Scale2x ; 3 : Scale2x réservé aux aplats ; 4 : 128 px ; 5 : reprise des icônes marquées à jour après une erreur ; 6 : icônes intégrées (Google) (les icônes plus anciennes sont refaites)
+// Icônes intégrées au serveur après coup : ces domaines sont repris une fois, à ce numéro de version,
+// sans retélécharger celles de tous les autres sites comme le ferait ICON_VERSION.
+const ICON_REVISED = { 'nespresso.com': 7 };
+const iconWanted = (it) => ICON_REVISED[baseDomain(iconHost(it))] || ICON_VERSION;
 const ICON_RETRY = 30 * 86400000;
 const ICON_ERROR_RETRY = 3600000;
 const iconErrors = new Map(); // site → date de la dernière erreur (pour cette session)
@@ -858,9 +867,131 @@ export function baseDomain(host) {
   return MULTI.has(p.slice(-2).join('.')) ? p.slice(-3).join('.') : p.slice(-2).join('.');
 }
 
+// Adresse sans paramètres ni ancre, sans « / » final : base de la correspondance « URL exacte »
+export function pageKey(uri) {
+  if (!uri) return '';
+  try {
+    const u = new URL(/^[a-z][a-z0-9+.-]*:/i.test(uri) ? uri : 'https://' + uri);
+    return (u.origin + u.pathname).replace(/\/+$/, '').toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+// item.match : absent/'domain' = même domaine de base, 'host' = même hôte ou un de ses sous-domaines,
+// 'exact' = même adresse (hors paramètres et ancre)
 export function matchesUrl(item, pageUrl) {
-  const d = baseDomain(hostOf(pageUrl));
-  return !!d && (item.uris || []).some((u) => baseDomain(hostOf(u)) === d);
+  const host = hostOf(pageUrl);
+  if (!host) return false;
+  const uris = item.uris || [];
+  if (item.match === 'host') return uris.some((u) => { const h = hostOf(u); return !!h && (host === h || host.endsWith('.' + h)); });
+  if (item.match === 'exact') { const k = pageKey(pageUrl); return uris.some((u) => pageKey(u) === k); }
+  const d = baseDomain(host);
+  return !!d && uris.some((u) => baseDomain(hostOf(u)) === d);
+}
+
+// ------------------------------------------------------------------ clés d'accès (passkeys, WebAuthn)
+// Entrée : passkeys = [{ credentialId, rpId, rpName, userHandle, userName, userDisplayName, key, counter, created }]
+// credentialId et userHandle en base64url ; key = clé privée ECDSA P-256 (PKCS#8, base64url). Format
+// compatible avec les fido2Credentials de Bitwarden (cf. parseBitwarden).
+
+const PK_AAGUID = Uint8Array.from('b10b1a55b10b4a55b10b1a55b10b4a55'.match(/../g), (x) => parseInt(x, 16));
+
+const concatBytes = (...parts) => {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let i = 0;
+  for (const p of parts) {
+    out.set(p, i);
+    i += p.length;
+  }
+  return out;
+};
+
+// CBOR minimal (entiers, octets, textes, Map) : objet d'attestation et clé publique COSE
+function cbor(v) {
+  const head = (major, n) => n < 24 ? [major << 5 | n] : n < 256 ? [major << 5 | 24, n]
+    : n < 65536 ? [major << 5 | 25, n >> 8, n & 255] : [major << 5 | 26, n >>> 24, (n >> 16) & 255, (n >> 8) & 255, n & 255];
+  if (typeof v === 'number') return Uint8Array.from(v >= 0 ? head(0, v) : head(1, -1 - v));
+  if (typeof v === 'string') v = { text: te.encode(v) };
+  if (v instanceof Uint8Array) return concatBytes(Uint8Array.from(head(2, v.length)), v);
+  if (v.text) return concatBytes(Uint8Array.from(head(3, v.text.length)), v.text);
+  return concatBytes(Uint8Array.from(head(5, v.size)), ...[...v].flatMap(([k, x]) => [cbor(k), cbor(x)]));
+}
+
+// Signature ECDSA brute de WebCrypto (r || s) → DER, attendu par WebAuthn
+function derSignature(raw) {
+  const int = (b) => {
+    let i = 0;
+    while (i < b.length - 1 && b[i] === 0) i++;
+    b = b.subarray(i);
+    return concatBytes(Uint8Array.from(b[0] & 0x80 ? [2, b.length + 1, 0] : [2, b.length]), b);
+  };
+  const body = concatBytes(int(raw.subarray(0, 32)), int(raw.subarray(32)));
+  return concatBytes(Uint8Array.from([0x30, body.length]), body);
+}
+
+// flags : UP (présence) | UV (vérification) | BE + BS (clé synchronisée) | AT (avec clé publique, création)
+async function authenticatorData(rpId, counter, attested = null) {
+  const rpHash = new Uint8Array(await subtle.digest('SHA-256', te.encode(rpId)));
+  const c = Uint8Array.from([counter >>> 24, (counter >> 16) & 255, (counter >> 8) & 255, counter & 255]);
+  return concatBytes(rpHash, Uint8Array.of(attested ? 0x5d : 0x1d), c, attested || new Uint8Array());
+}
+
+const clientData = (type, challenge, origin) => te.encode(JSON.stringify({ type, challenge, origin, crossOrigin: false }));
+
+// Nouvelle clé d'accès : { passkey (à ranger dans l'entrée), response (champs base64url pour la page) }.
+// user.id et challenge en base64url, tels qu'envoyés par la page.
+export async function createPasskey({ rpId, rpName = '', user, challenge, origin }) {
+  const pair = await subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  const jwk = await subtle.exportKey('jwk', pair.publicKey);
+  const credId = randomBytes(16);
+  const cose = cbor(new Map([[1, 2], [3, -7], [-1, 1], [-2, unb64url(jwk.x)], [-3, unb64url(jwk.y)]]));
+  const authData = await authenticatorData(rpId, 0, concatBytes(PK_AAGUID, Uint8Array.of(0, credId.length), credId, cose));
+  const attestation = cbor(new Map([['fmt', 'none'], ['attStmt', new Map()], ['authData', authData]]));
+  return {
+    passkey: {
+      credentialId: b64url(credId), rpId, rpName, userHandle: user.id, userName: user.name || '', userDisplayName: user.displayName || '',
+      key: b64url(new Uint8Array(await subtle.exportKey('pkcs8', pair.privateKey))), counter: 0, created: Date.now(),
+    },
+    response: {
+      id: b64url(credId),
+      clientDataJSON: b64url(clientData('webauthn.create', challenge, origin)),
+      attestationObject: b64url(attestation),
+      authenticatorData: b64url(authData),
+      publicKey: b64url(new Uint8Array(await subtle.exportKey('spki', pair.publicKey))),
+      publicKeyAlgorithm: -7,
+      transports: ['hybrid', 'internal'],
+    },
+  };
+}
+
+// Signature d'une connexion. Compteur : 0 reste 0 (clé synchronisée) ; sinon incrémenté, à enregistrer.
+export async function signPasskey(pk, { challenge, origin }) {
+  const counter = pk.counter ? pk.counter + 1 : 0;
+  const authData = await authenticatorData(pk.rpId, counter);
+  const cd = clientData('webauthn.get', challenge, origin);
+  const key = await subtle.importKey('pkcs8', unb64url(pk.key), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  const msg = concatBytes(authData, new Uint8Array(await subtle.digest('SHA-256', cd)));
+  const sig = new Uint8Array(await subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, msg));
+  return {
+    counter,
+    response: { id: pk.credentialId, clientDataJSON: b64url(cd), authenticatorData: b64url(authData), signature: b64url(derSignature(sig)), userHandle: pk.userHandle || '' },
+  };
+}
+
+// rpId acceptable pour une page : son hôte ou un domaine parent (pas plus haut que le domaine de base),
+// en HTTPS (ou localhost, comme le navigateur)
+export function rpIdAllowed(rpId, pageUrl) {
+  let u;
+  try {
+    u = new URL(pageUrl);
+  } catch {
+    return false;
+  }
+  const host = u.hostname.toLowerCase();
+  rpId = String(rpId || '').toLowerCase();
+  if (!rpId || (u.protocol !== 'https:' && host !== 'localhost' && !host.endsWith('.localhost'))) return false;
+  return host === rpId || (host.endsWith('.' + rpId) && rpId.length >= baseDomain(host).length);
 }
 
 // ------------------------------------------------------------------ TOTP
@@ -940,6 +1071,21 @@ export function generatePassword({ length = 20, lower = true, upper = true, digi
 
 // ------------------------------------------------------------------ import Bitwarden (JSON non chiffré)
 
+// fido2Credential Bitwarden → clé d'accès BioPass. credentialId : GUID (ses 16 octets) ou « b64.<base64url> ».
+const toB64url = (s) => String(s || '').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+function bwPasskey(f) {
+  if (!f?.keyValue || !f.rpId || (f.keyAlgorithm && f.keyAlgorithm !== 'ECDSA') || (f.keyCurve && f.keyCurve !== 'P-256')) return null;
+  const id = String(f.credentialId || '');
+  const hex = id.replace(/-/g, '');
+  const credentialId = id.startsWith('b64.') ? toB64url(id.slice(4))
+    : /^[0-9a-f]{32}$/i.test(hex) ? b64url(Uint8Array.from(hex.match(/../g), (x) => parseInt(x, 16))) : '';
+  if (!credentialId) return null;
+  return {
+    credentialId, rpId: f.rpId, rpName: f.rpName || '', userHandle: toB64url(f.userHandle), userName: f.userName || '',
+    userDisplayName: f.userDisplayName || '', key: toB64url(f.keyValue), counter: parseInt(f.counter) || 0, created: Date.parse(f.creationDate) || Date.now(),
+  };
+}
+
 export function parseBitwarden(text) {
   let data;
   try {
@@ -967,7 +1113,10 @@ export function parseBitwarden(text) {
       it.password = bw.login.password || '';
       it.totp = bw.login.totp || '';
       it.uris = (bw.login.uris || []).map((u) => u.uri).filter(Boolean);
-      if (bw.login.fido2Credentials?.length) {
+      const fido = bw.login.fido2Credentials || [];
+      const passkeys = fido.map(bwPasskey).filter(Boolean);
+      if (passkeys.length) it.passkeys = passkeys;
+      if (passkeys.length < fido.length) {
         it.fields.push({ name: 'Passkey', value: 'Passkey Bitwarden non importée (à recréer sur le site)', hidden: false });
       }
     }
