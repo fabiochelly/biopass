@@ -107,6 +107,31 @@ try {
   vals = await site.js(`[document.querySelector('[name=login]').value, document.querySelector('[name=pwd]').value]`);
   check('remplissage depuis la popup', vals[0] === 'alice' && vals[1] === 'alice-pw', JSON.stringify(vals));
 
+  // 2b. « Adresse e-mail » en autocomplete=off (Keycloak, Carrefour…) : pas confondu avec une adresse postale
+  const eo = await tab('http://site.localhost:8766/email-off.html');
+  const eoTab = await pop.js(`chrome.tabs.query({}).then(t => t.find(x => x.url?.includes('email-off.html')).id)`);
+  await bg({ type: 'fill', id: byName('Site principal')._id, tabId: eoTab }); await sleep(400);
+  vals = await eo.js(`[document.getElementById('username').value, document.getElementById('password').value]`);
+  check('« Adresse e-mail » en autocomplete=off rempli', vals[0] === 'alice' && vals[1] === 'alice-pw', JSON.stringify(vals));
+  await send('Target.closeTarget', { targetId: eo.targetId });
+
+  // 2b'. ForgeRock (Carrefour…) : un e-mail nommé « idToken1 » n'est pas un champ de code 2FA
+  const fg = await tab('http://site.localhost:8766/forgerock.html');
+  const fgTab = await pop.js(`chrome.tabs.query({}).then(t => t.find(x => x.url?.includes('forgerock.html')).id)`);
+  await fg.js(`document.getElementById('idToken2').focus()`);
+  await bg({ type: 'fill', id: byName('Site principal')._id, tabId: fgTab }); await sleep(400);
+  vals = await fg.js(`[document.getElementById('idToken1').value, document.getElementById('idToken2').value]`);
+  check('ForgeRock : e-mail « idToken1 » rempli', vals[0] === 'alice' && vals[1] === 'alice-pw', JSON.stringify(vals));
+  await send('Target.closeTarget', { targetId: fg.targetId });
+
+  // 2c. Site qui ne retient que la frappe réelle (isTrusted) et remet son modèle en quittant le champ
+  const tr = await tab('http://site.localhost:8766/trusted.html');
+  const trTab = await pop.js(`chrome.tabs.query({}).then(t => t.find(x => x.url?.includes('trusted.html')).id)`);
+  await bg({ type: 'fill', id: byName('Site principal')._id, tabId: trTab }); await sleep(600);
+  vals = await tr.js(`document.activeElement.blur(); [document.getElementById('email').value, document.getElementById('password').value]`);
+  check('site sensible à la frappe réelle : e-mail et mot de passe conservés', vals[0] === 'alice' && vals[1] === 'alice-pw', JSON.stringify(vals));
+  await send('Target.closeTarget', { targetId: tr.targetId });
+
   // 3. Entrée d'un autre domaine : refusée sans forçage
   await site.js(`document.querySelector('[name=login]').value=''; document.querySelector('[name=pwd]').value=''`);
   await bg({ type: 'fill', id: byName('Shadow')._id, tabId: siteTabId }); await sleep(400);

@@ -22,6 +22,8 @@
   const TEXTLIKE = new Set(['', 'text', 'email', 'tel', 'number']);
   const USER_RE = /user|login|logon|signin|e-?mail|courriel|identifi|account|compte|pseudo|nick|uname|member|membre|client|customer|^id$|_id$|matricule|adherent/i;
   const NOT_USER_RE = /search|recherche|query|captcha|coupon|promo|postal|zip|city|ville|street|adresse|address|amount|montant|quantit|first.?name|last.?name|prenom|^nom$/i;
+  // « Adresse e-mail », « adresse électronique », « e-mail address » : une adresse électronique, pas postale
+  const EMAIL_ADDR_RE = /(?:adresse|address)\s*(?:de\s+)?(?:e-?mail|mail|[ée]lectronique|courriel)|e-?mail\s*address/g;
   const OTP_RE = /one.?time|otp|totp|2fa|mfa|two.?factor|verif|auth.?code|security.?code|code.?de.?s[ée]curit|token|pin.?code/i;
   const seenPassword = new WeakSet(); // champs mot de passe passés en clair par un bouton « afficher »
 
@@ -83,6 +85,8 @@
     const ac = (el.getAttribute('autocomplete') || '').toLowerCase();
     if (ac.includes('one-time-code')) return true;
     if (!TEXTLIKE.has(el.type) || isPassword(el)) return false;
+    // champ e-mail ou déclaré identifiant : jamais un code (ForgeRock nomme ses champs « idToken1 »…)
+    if (el.type === 'email' || /\b(username|email)\b/.test(ac)) return false;
     const max = el.maxLength;
     return OTP_RE.test(desc(el)) && (max <= 0 || (max >= 4 && max <= 10));
   }
@@ -90,7 +94,7 @@
   function userScore(el) {
     if (!TEXTLIKE.has(el.type) || isPassword(el) || isOtp(el)) return -1;
     const ac = (el.getAttribute('autocomplete') || '').toLowerCase();
-    const d = desc(el);
+    const d = desc(el).replace(EMAIL_ADDR_RE, ' email ');
     if (ac === 'off' && NOT_USER_RE.test(d)) return -1;
     if (NOT_USER_RE.test(d) && !USER_RE.test(d)) return -1;
     let s = 1;
@@ -145,9 +149,8 @@
 
   // ---------------------------------------------------------------- remplissage
 
-  function setValue(el, value) {
-    if (!el || value == null || value === '') return;
-    el.focus({ preventScroll: true });
+  // Valeur posée par le setter natif (contourne les surcharges des frameworks, React…) + événements simulés.
+  function forceValue(el, value) {
     const proto = Object.getPrototypeOf(el);
     const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
       || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
@@ -156,6 +159,30 @@
     el.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertReplacementText', data: value }));
     el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Unidentified' }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function setValue(el, value) {
+    if (!el || value == null || value === '') return;
+    el.focus({ preventScroll: true });
+    // D'abord une vraie saisie : execCommand produit des événements beforeinput/input « de confiance »
+    // (isTrusted), traités comme une frappe au clavier par tous les sites — certains ignorent les
+    // événements simulés et remettent l'ancienne valeur. Repli : setter natif (champ non éditable, maxlength…).
+    let typed = false;
+    if (el.ownerDocument.activeElement === el || el.getRootNode().activeElement === el) {
+      try {
+        el.select();
+        typed = el.ownerDocument.execCommand('insertText', false, value) && el.value === value;
+      } catch {}
+    }
+    if (!typed) forceValue(el, value);
+    else {
+      el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Unidentified' }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    // valeur effacée juste après par le site (rendu asynchrone du composant) : on la repose une fois
+    setTimeout(() => {
+      if (el.isConnected && el.value === '') forceValue(el, value);
+    }, 250);
   }
 
   let filling = false; // focus donné par le remplissage : ne pas rouvrir le menu
@@ -205,12 +232,16 @@
     const creds = await send({ type: 'creds', id, ...extra });
     if (!creds) return false;
     const ok = fill(fields, creds);
+    // champ identifiant trouvé mais entrée sans identifiant : le dire, sinon on croit à un échec du remplissage
+    const noUser = ok && fields.username && !creds.username && !fields.username.value;
     if (ok && creds.totp && !fields.otp) {
       try {
         await navigator.clipboard.writeText(creds.totp);
-        toast('Code 2FA copié dans le presse-papiers');
+        toast(noUser ? 'Code 2FA copié — cette entrée n\'a pas d\'identifiant' : 'Code 2FA copié dans le presse-papiers');
+        return ok;
       } catch {}
     }
+    if (noUser) toast('Cette entrée BioPass n\'a pas d\'identifiant');
     return ok;
   }
 
@@ -1139,7 +1170,7 @@
   // masquer le bouton de connexion).
   const onInput = (e) => {
     const t = e.composedPath?.()[0] || e.target;
-    if (!e.isTrusted || t !== matchesField) return;
+    if (filling || !e.isTrusted || t !== matchesField) return;
     if (isPassword(t)) return closeMenu();
     renderMatches(t); // se rouvre aussi si l'on efface jusqu'à retrouver des correspondances
   };

